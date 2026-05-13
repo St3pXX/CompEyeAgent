@@ -1,5 +1,4 @@
 from crewai import Agent
-from config.settings import create_llm, WRITER_MODEL
 
 writer = Agent(
     role="报告撰写师",
@@ -9,6 +8,6 @@ writer = Agent(
         "你生成的报告需要分维度呈现，每个分析结论必须附带来源标注，"
         "确保读者可以追溯每条信息的原始来源。"
     ),
-    llm=create_llm(WRITER_MODEL),
+    llm="xiaomi/mimo-v2.5",
     verbose=True,
 )
