@@ -1,6 +1,7 @@
 import json
 import re
 from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Any
 
 from crew import analysis_crew
@@ -22,21 +23,32 @@ class AnalysisRunResult:
     retried: bool = False
 
 
-def run_analysis(inputs: dict[str, Any]) -> AnalysisRunResult:
+ProgressCallback = Callable[[str, str], None]
+
+
+def run_analysis(
+    inputs: dict[str, Any],
+    allow_retry: bool = True,
+    progress_callback: ProgressCallback | None = None,
+) -> AnalysisRunResult:
     """Run the Phase 1 chain, verify provenance, and rewrite once if needed."""
+    _emit_progress(progress_callback, "collect", "Collector 正在采集公开信息")
     kickoff_result = analysis_crew.kickoff(inputs=inputs)
+    _emit_progress(progress_callback, "verify", "Verifier 正在检查报告证据")
     report = _task_output(write_task, fallback=kickoff_result)
     verifier_result = _task_output(verify_task, fallback=kickoff_result)
     issues = _verification_issues(report, verifier_result)
 
-    if not issues:
+    if not issues or not allow_retry:
         return AnalysisRunResult(
             report=report,
             verifier_result=verifier_result,
-            passed=True,
+            passed=not issues,
         )
 
+    _emit_progress(progress_callback, "rewrite", "首次质检未通过，正在重写报告")
     retry_result, retry_write_task, retry_verify_task = _rewrite_and_verify(inputs, issues)
+    _emit_progress(progress_callback, "final", "正在整理最终结果")
     retry_report = _task_output(retry_write_task, fallback=retry_result)
     retry_verifier = _task_output(retry_verify_task, fallback=retry_result)
     retry_issues = _verification_issues(retry_report, retry_verifier)
@@ -132,3 +144,8 @@ def _task_output(task: Any, fallback: Any) -> str:
             return str(raw)
         return str(output)
     return str(fallback)
+
+
+def _emit_progress(callback: ProgressCallback | None, stage: str, message: str) -> None:
+    if callback:
+        callback(stage, message)

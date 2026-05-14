@@ -70,61 +70,17 @@
 
 ---
 
-## 🚀 在线体验（让评委立刻跑起来！）
+## 🚀 在线体验
 
-### 方式一：Colab 一键运行（推荐！）
+👉 **在线 Demo：** [https://compeyeagent.streamlit.app/](https://compeyeagent.streamlit.app/)
 
-[![Open in Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/)
+网页端面向评审演示做了产品化输入，不需要手写 JSON：
 
-**或手动在 Colab 中执行：**
-```python
-# 克隆仓库
-!git clone https://github.com/St3pXX/CompEyeAgent.git
-%cd CompEyeAgent
-
-# 安装依赖
-!pip install -r requirements.txt
-
-# 配置 API Key（在 Colab "🔑" 图标中添加环境变量)
-import os
-os.environ["MIMO_BASE_URL"] = "https://api.xiaomimimo.com/v1"
-os.environ["MIMO_API_KEY"] = "你的_API_KEY"
-
-# 运行示例
-!python main.py '{"productName":"飞书","competitors":["钉钉"],"dimensions":[{"name":"定价","indicators":["免费套餐"]}]}'
-```
-
-### 方式二：本地运行
-
-```bash
-# 1. 克隆
-git clone https://github.com/St3pXX/CompEyeAgent.git
-cd CompEyeAgent
-
-# 2. 安装依赖
-pip install -r requirements.txt
-
-# 3. 配置环境变量
-cp .env.example .env
-# 编辑 .env，填入你的 MIMO_API_KEY
-
-# 4. 运行
-python main.py '{"productName":"飞书","competitors":["钉钉"],"dimensions":[{"name":"定价","indicators":["免费套餐"]}]}'
-```
-
-CLI 会输出两部分内容：
-
-- 最终 Markdown 报告
-- Verifier 质检 JSON
-
-如果首次质检未通过，系统会自动触发一次 Writer + Verifier 重写复检；如果复检仍未通过，CLI 会以非零退出码结束，并保留质检问题用于人工复核。
-
-### 方式三：Streamlit 界面
-
-```bash
-streamlit run app.py
-# 浏览器打开 http://localhost:8501
-```
+- 输入目标产品和竞品名称
+- 勾选分析维度，填写重点指标
+- 点击示例按钮一键填充演示案例
+- 点击开始分析后，可看到 Collector / Analyzer / Writer / Verifier 的阶段进度
+- 默认启用快速演示模式，只跑一次完整质检以缩短等待时间；关闭后会启用“失败自动重写一次”的严格复检链路
 
 ---
 
