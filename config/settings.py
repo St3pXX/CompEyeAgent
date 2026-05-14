@@ -8,7 +8,7 @@ load_dotenv()
 def create_llm(model_name: str) -> ChatOpenAI:
     """Create a ChatOpenAI instance configured for MiMo API."""
     return ChatOpenAI(
-        base_url=os.getenv("MIMO_BASE_URL", "https://api.xiaomimmo.com/v1"),
+        base_url=os.getenv("MIMO_BASE_URL", "https://api.xiaomimo.com/v1"),
         api_key=os.getenv("MIMO_API_KEY", ""),
         model=model_name,
     )
