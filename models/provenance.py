@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from pydantic import Field
 from typing import List, Optional
 import uuid
 
@@ -11,9 +12,9 @@ class SourceRef(BaseModel):
 
 
 class Provenance(BaseModel):
-    conclusion_id: str = str(uuid.uuid4())
+    conclusion_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     text: str
-    source_references: List[SourceRef] = []
+    source_references: List[SourceRef] = Field(default_factory=list)
     confidence: float = 1.0
     generated_by: str
     parent_trace_id: Optional[str] = None

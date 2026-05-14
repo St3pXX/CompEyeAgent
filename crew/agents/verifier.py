@@ -1,4 +1,5 @@
 from crewai import Agent
+from config.settings import VERIFIER_MODEL, create_llm
 
 verifier = Agent(
     role="质量检测师",
@@ -11,6 +12,6 @@ verifier = Agent(
         "不继承任何撰写者的对话历史，以确保客观公正。"
         "输出 JSON 格式：{passed(bool), confidence(0-100), issues(array)}。"
     ),
-    llm="xiaomi/mimo-v2.5-pro",
+    llm=create_llm(VERIFIER_MODEL),
     verbose=True,
 )

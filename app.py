@@ -3,8 +3,9 @@
 
 import streamlit as st
 import json
-from crew import analysis_crew
+import config.settings
 from models.schema import CompetitorInput
+from runner import run_analysis
 
 st.set_page_config(page_title="AI 竞品分析 Agent 系统", page_icon="🔍")
 
@@ -53,11 +54,20 @@ if run_button:
         st.markdown("### 🤖 Agent 协作分析中...")
 
         with st.spinner("Collector → Analyzer → Writer → Verifier"):
-            result = analysis_crew.kickoff(inputs=validated)
+            result = run_analysis(validated)
 
         st.markdown("---")
         st.markdown("### 📊 分析结果")
-        st.markdown(result)
+        if result.retried:
+            st.warning("首次质检未通过，系统已自动重写并复检一次。")
+        if result.passed:
+            st.success("质检通过")
+        else:
+            st.error("质检未通过：最终报告仍缺少来源或 Verifier 判定失败。")
+        st.markdown(result.report)
+
+        with st.expander("质检结果"):
+            st.code(result.verifier_result, language="json")
 
     except json.JSONDecodeError as e:
         st.error(f"JSON 解析错误: {e}")

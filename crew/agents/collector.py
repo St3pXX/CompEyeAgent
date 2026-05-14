@@ -2,6 +2,7 @@ from crewai import Agent
 from crewai.tools import BaseTool
 from pydantic import Field
 import os
+from config.settings import COLLECTOR_MODEL, MIMO_BASE_URL, create_llm
 
 
 class WebSearchTool(BaseTool):
@@ -17,14 +18,22 @@ class WebSearchTool(BaseTool):
         import litellm
 
         os.environ["OPENAI_API_KEY"] = os.getenv("MIMO_API_KEY", "")
-        os.environ["OPENAI_API_BASE"] = os.getenv("MIMO_BASE_URL", "https://token-plan-cn.xiaomimmo.com/v1")
+        os.environ["OPENAI_API_BASE"] = MIMO_BASE_URL
 
         try:
+            litellm_model = COLLECTOR_MODEL
+            if not litellm_model.startswith("openai/"):
+                litellm_model = f"openai/{litellm_model}"
+
             response = litellm.completion(
-                model="openai/xiaomi/mimo-v2.5",
+                model=litellm_model,
                 messages=[{"role": "user", "content": f"请搜索以下内容并返回结果：{query}"}],
                 api_key=os.getenv("MIMO_API_KEY"),
-                base_url=os.getenv("MIMO_BASE_URL"),
+                base_url=MIMO_BASE_URL,
+                temperature=0.7,
+                top_p=0.95,
+                max_completion_tokens=2048,
+                extra_body={"thinking": {"type": "disabled"}},
                 timeout=30,
             )
             return response.choices[0].message.content
@@ -40,7 +49,7 @@ collector = Agent(
         "用户评价等公开信息。你严格遵循溯源要求，每条结论必须附带来源 URL 和原文片段，"
         "并以结构化 JSON 格式输出。"
     ),
-    llm="xiaomi/mimo-v2.5",
+    llm=create_llm(COLLECTOR_MODEL),
     tools=[WebSearchTool()],
     verbose=True,
 )

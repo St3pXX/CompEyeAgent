@@ -5,6 +5,11 @@ from crew.agents.collector import collector
 collect_info_task = Task(
     description=(
         "根据用户提供的竞品列表和维度，使用网络搜索工具采集每个竞品的公开信息。\n"
+        "用户输入：\n"
+        "- 目标产品：{productName}\n"
+        "- 竞品列表：{competitors}\n"
+        "- 分析维度：{dimensions}\n"
+        "- 分析类型：{analysisType}\n\n"
         "输入格式示例：\n"
         '{"productName": "产品A", "competitors": ["产品B", "产品C"], '
         '"dimensions": [{"name": "定价", "indicators": ["价格", "免费试用"]}]}\n\n'

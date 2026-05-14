@@ -3,8 +3,9 @@
 
 import sys
 import json
-from crew import analysis_crew
+import config.settings
 from models.schema import CompetitorInput
+from runner import run_analysis
 
 
 def main():
@@ -44,13 +45,23 @@ def main():
     print("=" * 60)
     print()
 
-    result = analysis_crew.kickoff(inputs=inputs)
+    result = run_analysis(inputs)
 
     print()
     print("=" * 60)
     print("分析完成")
+    print(f"质检状态: {'通过' if result.passed else '未通过'}")
+    print(f"是否重写: {'是' if result.retried else '否'}")
     print("=" * 60)
-    print(result)
+    print(result.report)
+    print()
+    print("=" * 60)
+    print("质检结果")
+    print("=" * 60)
+    print(result.verifier_result)
+
+    if not result.passed:
+        sys.exit(2)
 
 
 if __name__ == "__main__":
