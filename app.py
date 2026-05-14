@@ -41,6 +41,7 @@ SAMPLES = {
         "product_name": "飞书",
         "competitors": "钉钉, 企业微信",
         "dimensions": ["定价", "功能", "用户体验"],
+        "custom_dimensions": "",
         "custom_indicators": "免费套餐, 文档协作, 视频会议, AI 助手",
         "analysis_type": "SWOT",
     },
@@ -48,6 +49,7 @@ SAMPLES = {
         "product_name": "豆包",
         "competitors": "Kimi, 通义千问",
         "dimensions": ["功能", "用户体验", "市场策略"],
+        "custom_dimensions": "生态集成",
         "custom_indicators": "长文本, 多模态, 搜索能力, 移动端体验",
         "analysis_type": "综合报告",
     },
@@ -55,6 +57,7 @@ SAMPLES = {
         "product_name": "Notion AI",
         "competitors": "飞书妙记, 腾讯文档智能助手",
         "dimensions": ["定价", "功能", "性能"],
+        "custom_dimensions": "知识沉淀",
         "custom_indicators": "AI 摘要, 协作工作流, 导出能力, 响应速度",
         "analysis_type": "对比表格",
     },
@@ -90,6 +93,14 @@ def inject_styles() -> None:
             color: var(--ink);
         }
 
+        html,
+        body,
+        [data-testid="stAppViewContainer"],
+        .stApp {
+            height: 100vh;
+            overflow: hidden;
+        }
+
         [data-testid="stHeader"] {
             display: none !important;
         }
@@ -106,6 +117,41 @@ def inject_styles() -> None:
         .block-container {
             max-width: 1480px;
             padding: .55rem 1.2rem .8rem;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        [data-testid="stVerticalBlock"] {
+            gap: .7rem;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"] {
+            border-radius: 22px;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"] > div {
+            border-color: var(--line);
+            background: var(--panel);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(22px);
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] {
+            gap: .55rem;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar,
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar,
+        .stMarkdown::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar-thumb,
+        [data-testid="stVerticalBlock"]::-webkit-scrollbar-thumb,
+        .stMarkdown::-webkit-scrollbar-thumb {
+            background: rgba(102, 112, 133, .28);
+            border-radius: 999px;
         }
 
         .demo-topbar,
@@ -374,7 +420,10 @@ def inject_styles() -> None:
 
         .report-page {
             max-width: 1040px;
+            max-height: calc(100vh - 1.2rem);
+            overflow: auto;
             margin: 0 auto;
+            padding-bottom: 1rem;
         }
 
         .stButton > button {
@@ -448,9 +497,17 @@ def apply_sample(name: str) -> None:
 
 def build_inputs() -> dict:
     dimensions = []
+    seen_dimensions = set()
     custom_indicators = parse_list(st.session_state.custom_indicators)
     for dimension in st.session_state.dimensions:
+        seen_dimensions.add(dimension)
         indicators = list(dict.fromkeys(DIMENSION_PRESETS[dimension][:2] + custom_indicators))
+        dimensions.append({"name": dimension, "indicators": indicators[:5]})
+    for dimension in parse_list(st.session_state.get("custom_dimensions", "")):
+        if dimension in seen_dimensions:
+            continue
+        seen_dimensions.add(dimension)
+        indicators = custom_indicators or ["核心能力", "用户体验", "市场表现"]
         dimensions.append({"name": dimension, "indicators": indicators[:5]})
 
     return {
@@ -582,9 +639,9 @@ if report_view_requested():
 left_col, center_col, right_col = st.columns([1.1, 1.35, 1.05], gap="medium")
 
 with left_col:
-    with st.container(border=True):
+    with st.container(border=True, height=690):
         st.markdown("## 配置分析")
-        st.caption("填写目标产品、竞品和分析维度。模板改为紧凑按钮。")
+        st.caption("填写目标产品、竞品、预设维度或自定义维度。")
 
         template_cols = st.columns(3, gap="small")
         for index, sample_name in enumerate(SAMPLES):
@@ -596,12 +653,13 @@ with left_col:
         st.text_input("目标产品", key="product_name")
         st.text_input("竞品", key="competitors", help="用逗号分隔多个竞品。")
         st.multiselect("分析维度", options=list(DIMENSION_PRESETS.keys()), key="dimensions")
+        st.text_area("自定义维度", key="custom_dimensions", height=72, help="用逗号分隔，例如：生态集成、渠道策略、合规能力。")
         st.text_area("重点指标", key="custom_indicators", height=82)
         st.selectbox("输出形式", ["SWOT", "对比表格", "综合报告"], key="analysis_type")
         run_button = st.button("开始分析", type="primary", use_container_width=True)
 
 with center_col:
-    with st.container(border=True):
+    with st.container(border=True, height=690):
         st.markdown("### 报告总结")
         st.caption("完整报告通过按钮进入独立页面查看。")
         result_container = st.container()
@@ -626,11 +684,12 @@ with center_col:
                     unsafe_allow_html=True,
                 )
                 st.markdown("**报告预览**")
-                st.markdown(latest_result.report[:520] + ("..." if len(latest_result.report) > 520 else ""))
+                with st.container(height=360):
+                    st.markdown(latest_result.report[:1600] + ("..." if len(latest_result.report) > 1600 else ""))
                 render_report_button("open_report_from_summary")
 
 with right_col:
-    with st.container(border=True):
+    with st.container(border=True, height=690):
         st.markdown("### Agent 执行追踪")
         quick_mode = st.toggle("快速演示模式", value=True, help="关闭后启用失败自动重写一次。")
         show_brief = st.toggle("显示结构化 brief", value=False)
