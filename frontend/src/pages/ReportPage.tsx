@@ -1,12 +1,26 @@
+import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-const sources = [
-  ["example.com", "报告中的上下文片段，后续由 source_references 接口填充。"],
-  ["docs.example.cn", "报告中的上下文片段，后续展示 URL、snippet 和 confidence。"]
-];
+import { downloadTextFile, getRun } from "../api/client";
+import type { RunDetailResponse } from "../api/types";
+import { createJsonFilename, createMarkdownFilename, selectArtifacts } from "../utils/runData";
 
 export function ReportPage() {
   const { runId = "demo-run" } = useParams();
+  const [detail, setDetail] = useState<RunDetailResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setError(null);
+    getRun(runId)
+      .then(setDetail)
+      .catch((err) => setError(err instanceof Error ? err.message : "加载报告失败"));
+  }, [runId]);
+
+  const artifacts = useMemo(() => selectArtifacts(detail?.artifacts ?? []), [detail]);
+  const reportContent = artifacts.report?.content ?? "报告还未生成。请先到 Dashboard 查看任务执行状态。";
+  const verifierContent = artifacts.verifier?.content ?? "{}";
+  const briefContent = artifacts.brief?.content ?? "{}";
 
   return (
     <section className="report-page page-frame">
@@ -19,38 +33,62 @@ export function ReportPage() {
         <Link to={`/dashboard/${runId}`} className="button-link secondary">查看 Dashboard</Link>
       </div>
 
+      {error && <div className="status-banner error-message">加载失败：{error}</div>}
+
       <div className="report-grid">
         <article className="report-body">
           <p className="eyebrow">Markdown Report</p>
-          <h2>飞书 AI 办公协同竞品分析</h2>
-          <p>
-            基于公开信息，对钉钉、企业微信、Notion 等产品进行 SWOT 与对比分析。
-            下一步会从 `report_markdown` artifact 加载完整报告内容。
-          </p>
+          <pre className="markdown-report">{reportContent}</pre>
           <div className="download-row">
-            <button className="button-link">下载 Markdown</button>
-            <button className="button-link secondary">下载 JSON</button>
-            <button className="button-link secondary">复制报告链接</button>
+            <button
+              className="button-link"
+              disabled={!artifacts.report}
+              onClick={() => artifacts.report && downloadTextFile(createMarkdownFilename(runId), artifacts.report.content, "text/markdown;charset=utf-8")}
+            >
+              下载 Markdown
+            </button>
+            <button
+              className="button-link secondary"
+              disabled={!detail}
+              onClick={() => detail && downloadTextFile(createJsonFilename(runId, "artifacts"), JSON.stringify(detail, null, 2), "application/json;charset=utf-8")}
+            >
+              下载 JSON
+            </button>
+            <button className="button-link secondary" onClick={() => navigator.clipboard.writeText(window.location.href)}>
+              复制报告链接
+            </button>
           </div>
         </article>
 
         <aside className="panel-card">
           <h2>报告元信息</h2>
           <div className="source-card">
-            <strong>Verifier</strong>
-            <p>Needs review</p>
+            <strong>Run 状态</strong>
+            <p>{detail?.run.status ?? "loading"}</p>
+          </div>
+          <div className="source-card">
+            <strong>Verifier JSON</strong>
+            <pre>{verifierContent}</pre>
           </div>
           <div className="source-card">
             <strong>Input Brief</strong>
-            <p>目标产品、竞品、维度、指标</p>
+            <pre>{briefContent}</pre>
           </div>
           <h2 className="source-heading">来源索引</h2>
-          {sources.map(([host, snippet]) => (
-            <div className="source-card" key={host}>
-              <strong>{host}</strong>
-              <p>{snippet}</p>
+          {(detail?.sources.length ?? 0) === 0 ? (
+            <div className="source-card">
+              <strong>暂无来源</strong>
+              <p>任务完成后，这里会展示从报告中提取的 URL 和上下文片段。</p>
             </div>
-          ))}
+          ) : (
+            detail?.sources.map((source) => (
+              <a className="source-card source-link" key={source.source_id} href={source.uri} target="_blank" rel="noreferrer">
+                <strong>{source.uri}</strong>
+                <p>{source.snippet || "无上下文片段"}</p>
+                <small>confidence: {source.confidence}</small>
+              </a>
+            ))
+          )}
         </aside>
       </div>
     </section>

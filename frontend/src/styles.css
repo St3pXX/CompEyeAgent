@@ -28,7 +28,8 @@ body {
 
 button,
 input,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -267,6 +268,17 @@ p {
   flex: 1;
 }
 
+.prompt-bar textarea {
+  flex: 1;
+  min-height: 42px;
+  max-height: 90px;
+  resize: vertical;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--ink);
+}
+
 .prompt-bar button,
 .composer button {
   width: 38px;
@@ -276,6 +288,12 @@ p {
   background: #172033;
   color: #fff;
   font-weight: 900;
+}
+
+button:disabled,
+.button-link:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
 }
 
 .capability-row {
@@ -311,6 +329,11 @@ p {
   padding: 16px 18px;
 }
 
+.error-message {
+  border-color: rgba(255, 75, 75, 0.28);
+  background: rgba(255, 75, 75, 0.08);
+}
+
 .user-message {
   justify-self: end;
   background: #172033;
@@ -338,6 +361,33 @@ p {
 .intent-grid b,
 .intent-grid span {
   display: block;
+}
+
+.brief-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.brief-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.brief-form input,
+.brief-form select {
+  width: 100%;
+  min-height: 38px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.88);
+  color: var(--ink);
+  padding: 0 11px;
+  outline: 0;
 }
 
 .intent-grid span {
@@ -403,6 +453,13 @@ p {
   font-size: 38px;
 }
 
+.status-banner {
+  margin-bottom: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 14px 16px;
+}
+
 .dashboard-grid {
   display: grid;
   grid-template-columns: 320px 1fr 260px;
@@ -454,6 +511,23 @@ p {
   font-weight: 900;
 }
 
+.stage-card.stage-active {
+  border-color: rgba(37, 99, 235, 0.25);
+  background: rgba(37, 99, 235, 0.1);
+}
+
+.stage-card.stage-active span {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: #fff;
+}
+
+.stage-card.stage-waiting span {
+  background: rgba(102, 112, 133, 0.08);
+  border-color: rgba(102, 112, 133, 0.16);
+  color: var(--muted);
+}
+
 .stage-card p,
 .timeline-event p,
 .source-card p {
@@ -493,8 +567,61 @@ p {
   margin-top: 12px;
 }
 
+.source-card pre {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #24324a;
+  font-size: 12px;
+}
+
+.source-link {
+  display: block;
+}
+
+.source-link strong {
+  word-break: break-all;
+}
+
 .source-heading {
   margin-top: 24px;
+}
+
+.panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.run-summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  margin: 16px 0;
+  color: var(--muted);
+}
+
+.run-summary strong {
+  color: var(--ink);
+}
+
+.timeline-event small {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.markdown-report {
+  min-height: 420px;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #172033;
+  font: inherit;
+  line-height: 1.7;
 }
 
 @media (max-width: 1080px) {
@@ -534,7 +661,8 @@ p {
   }
 
   .intent-grid,
-  .result-message {
+  .result-message,
+  .brief-form {
     grid-template-columns: 1fr;
   }
 
