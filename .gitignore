@@ -42,3 +42,6 @@ ENV/
 
 # CrewAI / LangChain cache
 .cache/
+
+# Local demo runtime logs
+streamlit*.log

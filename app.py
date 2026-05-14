@@ -27,6 +27,13 @@ DIMENSION_PRESETS = {
     "性能": ["响应速度", "稳定性", "并发能力", "安全能力"],
 }
 
+INDICATOR_OPTIONS = list(dict.fromkeys(item for items in DIMENSION_PRESETS.values() for item in items)) + [
+    "AI 助手",
+    "知识库",
+    "开放 API",
+    "私有化部署",
+]
+
 STAGES = [
     ("collect", "Collect", "公开资料采集", "为每个竞品和指标寻找公开证据"),
     ("analyze", "Analyze", "结构化分析", "把证据整理为 SWOT / 对比结论"),
@@ -36,34 +43,15 @@ STAGES = [
     ("final", "Done", "产物交付", "输出报告、质检 JSON 和输入 brief"),
 ]
 
-SAMPLES = {
-    "协同办公": {
-        "product_name": "飞书",
-        "competitors": "钉钉, 企业微信",
-        "dimensions": ["定价", "功能", "用户体验"],
-        "custom_dimensions": "",
-        "custom_indicators": "免费套餐, 文档协作, 视频会议, AI 助手",
-        "analysis_type": "SWOT",
-    },
-    "AI 助手": {
-        "product_name": "豆包",
-        "competitors": "Kimi, 通义千问",
-        "dimensions": ["功能", "用户体验", "市场策略"],
-        "custom_dimensions": "生态集成",
-        "custom_indicators": "长文本, 多模态, 搜索能力, 移动端体验",
-        "analysis_type": "综合报告",
-    },
-    "知识工具": {
-        "product_name": "Notion AI",
-        "competitors": "飞书妙记, 腾讯文档智能助手",
-        "dimensions": ["定价", "功能", "性能"],
-        "custom_dimensions": "知识沉淀",
-        "custom_indicators": "AI 摘要, 协作工作流, 导出能力, 响应速度",
-        "analysis_type": "对比表格",
-    },
+DEFAULTS = {
+    "product_name": "飞书",
+    "competitors": "钉钉, 企业微信",
+    "selected_dimensions": ["定价", "功能", "用户体验"],
+    "custom_dimensions": "",
+    "selected_indicators": ["免费套餐", "文档协作", "视频会议", "AI 助手"],
+    "custom_indicators": "",
+    "analysis_type": "SWOT",
 }
-
-DEFAULTS = SAMPLES["协同办公"]
 WORKSPACE_PANEL_HEIGHT = 560
 
 
@@ -466,6 +454,32 @@ def inject_styles() -> None:
             font-weight: 750;
         }
 
+        [data-testid="stProgress"] {
+            padding-top: 2px;
+            padding-bottom: 8px;
+        }
+
+        [data-testid="stProgress"] div {
+            overflow: visible !important;
+        }
+
+        [data-testid="stProgress"] p {
+            line-height: 1.55;
+            min-height: 28px;
+            margin-bottom: 4px;
+            overflow: visible !important;
+        }
+
+        [data-testid="stAlert"] {
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+
+        [data-testid="stAlert"] p {
+            line-height: 1.45;
+            overflow: visible;
+        }
+
         @media (max-width: 1100px) {
             .metric-strip {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -493,24 +507,22 @@ def parse_list(value: str) -> list[str]:
     return [item.strip() for item in value.replace("，", ",").split(",") if item.strip()]
 
 
-def apply_sample(name: str) -> None:
-    for key, value in SAMPLES[name].items():
-        st.session_state[key] = value
-
-
 def build_inputs() -> dict:
     dimensions = []
     seen_dimensions = set()
+    selected_indicators = st.session_state.get("selected_indicators", [])
     custom_indicators = parse_list(st.session_state.custom_indicators)
-    for dimension in st.session_state.dimensions:
-        seen_dimensions.add(dimension)
-        indicators = list(dict.fromkeys(DIMENSION_PRESETS[dimension][:2] + custom_indicators))
-        dimensions.append({"name": dimension, "indicators": indicators[:5]})
-    for dimension in parse_list(st.session_state.get("custom_dimensions", "")):
+    shared_indicators = list(dict.fromkeys(selected_indicators + custom_indicators))
+    selected_dimensions = st.session_state.get("selected_dimensions", [])
+    all_dimensions = selected_dimensions + parse_list(st.session_state.custom_dimensions)
+    for dimension in all_dimensions:
         if dimension in seen_dimensions:
             continue
         seen_dimensions.add(dimension)
-        indicators = custom_indicators or ["核心能力", "用户体验", "市场表现"]
+        preset_indicators = DIMENSION_PRESETS.get(dimension, [])[:2]
+        indicators = list(dict.fromkeys(preset_indicators + shared_indicators))
+        if not indicators:
+            indicators = ["核心能力", "用户体验", "市场表现"]
         dimensions.append({"name": dimension, "indicators": indicators[:5]})
 
     return {
@@ -543,6 +555,18 @@ def render_metric(label: str, value: str) -> str:
 def initialize_state() -> None:
     for key, value in DEFAULTS.items():
         st.session_state.setdefault(key, value)
+    if "dimensions_input" in st.session_state and "selected_dimensions" not in st.session_state:
+        entered_dimensions = parse_list(st.session_state.dimensions_input)
+        st.session_state.selected_dimensions = [
+            dimension for dimension in entered_dimensions if dimension in DIMENSION_PRESETS
+        ]
+        st.session_state.custom_dimensions = ", ".join(
+            dimension for dimension in entered_dimensions if dimension not in DIMENSION_PRESETS
+        )
+    if "dimensions" in st.session_state and "selected_dimensions" not in st.session_state:
+        st.session_state.selected_dimensions = [
+            dimension for dimension in st.session_state.dimensions if dimension in DIMENSION_PRESETS
+        ]
     st.session_state.setdefault("latest_result", None)
     st.session_state.setdefault("latest_brief", None)
 
@@ -644,21 +668,27 @@ left_col, center_col, right_col = st.columns([1.1, 1.35, 1.05], gap="medium")
 with left_col:
     with st.container(border=True, height=WORKSPACE_PANEL_HEIGHT):
         st.markdown("## 配置分析")
-        st.caption("填写目标产品、竞品、预设维度或自定义维度。")
+        st.caption("填写任意目标产品、竞品和分析维度。")
         run_button = st.button("开始分析", type="primary", use_container_width=True)
 
-        template_cols = st.columns(3, gap="small")
-        for index, sample_name in enumerate(SAMPLES):
-            with template_cols[index]:
-                if st.button(sample_name, key=f"sample_{sample_name}", use_container_width=True):
-                    apply_sample(sample_name)
-                    st.rerun()
-
-        st.text_input("目标产品", key="product_name")
-        st.text_input("竞品", key="competitors", help="用逗号分隔多个竞品。")
-        st.multiselect("分析维度", options=list(DIMENSION_PRESETS.keys()), key="dimensions")
-        st.text_area("自定义维度", key="custom_dimensions", height=72, help="用逗号分隔，例如：生态集成、渠道策略、合规能力。")
-        st.text_area("重点指标", key="custom_indicators", height=82)
+        st.text_input("目标产品", key="product_name", placeholder="输入要分析的产品或品牌")
+        st.text_input("竞品", key="competitors", help="用逗号分隔多个竞品。", placeholder="竞品 A, 竞品 B")
+        st.multiselect(
+            "分析维度",
+            options=list(DIMENSION_PRESETS.keys()),
+            key="selected_dimensions",
+            help="选择常用维度，也可以直接输入新维度并回车添加。",
+            placeholder="选择或输入分析维度",
+            accept_new_options=True,
+        )
+        st.multiselect(
+            "重点指标",
+            options=INDICATOR_OPTIONS,
+            key="selected_indicators",
+            help="选择常用指标，也可以直接输入新指标并回车添加。",
+            placeholder="选择或输入重点指标",
+            accept_new_options=True,
+        )
         st.selectbox("输出形式", ["SWOT", "对比表格", "综合报告"], key="analysis_type")
 
 with center_col:
