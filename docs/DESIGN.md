@@ -43,48 +43,75 @@
 
 ## 3. 系统架构图（V2.0）
 
-```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                            用户 / UI                                     │
-│        Product Site / Full-screen Demo / Dashboard / CLI                 │
-└─────────────────────────────────┬───────────────────────────────────────┘
-                                  │ FastAPI / SSE / REST
-┌─────────────────────────────────▼───────────────────────────────────────┐
-│                        API + Coordinator (主控 Agent)                    │
-│  - /api/runs 创建任务                                                    │
-│  - /sse/runs/{id} 推送 Agent 事件                                        │
-│  - /api/runs/{id} 查询结果与产物                                         │
-│  - 主循环 while(tool_calls)                                              │
-│  - 任务分解与 DAG 生成                                                    │
-│  - 子 Agent 调度 (通过工具调用)                                           │
-│  - 状态持久化 (短期记忆)                                                  │
-└───────────────┬─────────────┬─────────────┬─────────────┬───────────────┘
-                │             │             │             │
-      ┌─────────▼──────┐ ┌────▼─────────┐ ┌─▼──────────┐ ┌▼───────────┐
-      │ 采集工具       │ │ 分析工具     │ │ 撰写工具   │ │ 质检工具   │
-      │ (Collect)      │ │ (Analyze)    │ │ (Compose)  │ │ (Verify)   │
-      │ 调用 MiMo-V2.5 │ │ 调用 MiMo-V2.5│ │ MiMo-V2.5 │ │ MiMo-Pro   │
-      └─────────┬──────┘ └────┬─────────┘ └─┬──────────┘ └┬───────────┘
-                │             │             │             │
-                └─────────────┴─────────────┴─────────────┘
-                                  │
-                ┌─────────────────▼─────────────────────────────────┐
-                │            Scratchpad + Run Store                  │
-                │  - raw/     采集原始数据 (JSON + 元数据)           │
-                │  - parsed/  清洗后结构化数据                       │
-                │  - analysis/分析结论 (含 provenance)               │
-                │  - drafts/  报告草稿                               │
-                │  - tasks/   任务状态 (DAG 节点文件)                │
-                │  - provenance/溯源映射索引                         │
-                │  - runs/events/artifacts 持久化任务、事件流和产物  │
-                └─────────────────┬─────────────────────────────────┘
-                                  │
-                ┌─────────────────▼─────────────────────────────────┐
-                │         可观测性三层模型                           │
-                │  L1: 产品事件 (用户行为日志)                        │
-                │  L2: OTel 指标 (调用链、延迟、Token)               │
-                │  L3: 会话语义追踪 (SemanticStep 序列)              │
-                └────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph Entry["用户入口"]
+        Web["Web App<br/>产品 Web 应用"]
+        MCP["MCP Server<br/>Agent 工作台入口"]
+        Collab["Feishu / DingTalk<br/>协作平台入口"]
+    end
+
+    subgraph WebPages["Web App 页面"]
+        Demo["Demo<br/>全屏对话"]
+        Dash["Dashboard<br/>运行看板"]
+        Report["Report<br/>报告详情"]
+    end
+
+    subgraph API["服务层"]
+        Gateway["FastAPI Gateway<br/>统一 API 网关"]
+        Stream["SSE Event Stream<br/>实时事件流"]
+    end
+
+    subgraph Core["任务编排"]
+        Coordinator["Coordinator<br/>主控调度"]
+        DAG["DAG Planner<br/>任务拆解"]
+        Policy["Retry / Review Policy<br/>重试与复核策略"]
+    end
+
+    subgraph Agents["专职 Agent"]
+        Collector["Collector<br/>资料采集"]
+        Analyzer["Analyzer<br/>结构化分析"]
+        Writer["Writer<br/>报告撰写"]
+        Verifier["Verifier<br/>独立质检"]
+    end
+
+    subgraph Memory["数据与证据"]
+        Scratchpad["Scratchpad<br/>中间产物"]
+        RunStore["Run Store<br/>任务记录"]
+        Provenance["Provenance Index<br/>来源索引"]
+    end
+
+    subgraph Ops["可观测与治理"]
+        Timeline["Agent Timeline<br/>执行时间线"]
+        Metrics["Metrics / Traces<br/>指标与链路"]
+        Audit["Audit Log<br/>审计日志"]
+    end
+
+    Web --> Demo
+    Web --> Dash
+    Web --> Report
+    Demo --> Gateway
+    Report --> Gateway
+    Dash --> Stream
+    MCP --> Gateway
+    Collab --> Gateway
+    Gateway --> Coordinator
+    Coordinator --> DAG
+    Coordinator --> Policy
+    DAG --> Collector
+    DAG --> Analyzer
+    DAG --> Writer
+    Policy --> Verifier
+    Collector --> Scratchpad
+    Analyzer --> Scratchpad
+    Writer --> RunStore
+    Verifier --> Provenance
+    Scratchpad --> Provenance
+    RunStore --> Timeline
+    Provenance --> Timeline
+    Stream --> Dash
+    Timeline --> Metrics
+    Timeline --> Audit
 ```
 
 ---
@@ -392,14 +419,14 @@ async def run_analysis_stream(user_input):
 
 **Phase 落地**
 - Phase 1：控制台实时打印（`print` 代替 `yield`）
-- Phase 1.5：在现有 `runner.py progress_callback` 基础上封装 FastAPI SSE，先推送 `agent.start / agent.progress / agent.done / verifier.issue / artifact.ready` 事件，支撑全屏 Demo 与 Dashboard 实时联动
+- Phase 1.5：在现有 `runner.py progress_callback` 基础上封装 FastAPI SSE，先推送 `agent.start / agent.progress / agent.done / verifier.issue / artifact.ready` 事件，支撑 Web App 的 Demo / Dashboard / Report 页面实时联动
 - Phase 2：实现真正的 `async generator` + Coordinator 事件流
 - Phase 3：支持 WebSocket 双向通信
 
-### 优化 8.1：独立全屏 Demo + Dashboard
+### 优化 8.1：Web App 页面与实时 Dashboard
 
 **原理**
-Streamlit 适合快速证明链路，但复杂产品体验会遇到布局、路由、实时交互和顶部框架限制。Phase 1.5 将当前 Demo 拆成独立前端与后端 API：
+Streamlit 适合快速证明链路，但复杂产品体验会遇到布局、路由、实时交互和顶部框架限制。Phase 1.5 将当前能力升级为独立 Web App，并通过后端 API 与真实 Agent 链路交互：
 
 ```text
 React / Vite Frontend
@@ -422,7 +449,7 @@ FastAPI Backend
 - 当前 CrewAI 顺序链路不重写，只通过 API 层包装，保证产品体验升级不阻塞核心算法演进
 
 **Phase 落地**
-- Phase 1.5：React + FastAPI + SSE + SQLite/JSON，形成可持续迭代的在线产品 Demo
+- Phase 1.5：React + FastAPI + SSE + SQLite/JSON，形成可持续迭代的在线 Web App
 - Phase 2：Dashboard 对接 DAG 节点、Scratchpad 文件、Run Inspector 下钻视图
 - Phase 3：接入权限、团队空间、长期记忆、完整审计日志
 
@@ -446,7 +473,7 @@ compeye.get_sources(run_id)        # 获取 provenance / source references
 - Webhook：向企业内部系统推送 `artifact.ready`、`verifier.issue`、`run.failed` 等事件
 
 **Phase 落地**
-- Phase 2：先定义 MCP 工具协议和后端 API 对齐，保证 Web、CLI、MCP 复用同一套 run/event/artifact 模型
+- Phase 2：先定义 MCP 工具协议和后端 API 对齐，保证 Web App、CLI、MCP 复用同一套 run/event/artifact 模型
 - Phase 3：提供正式 MCP Server、飞书/钉钉机器人、Webhook 与企业权限接入
 
 ---
@@ -539,7 +566,7 @@ permissions = {
 | 阶段 | 时间 | 范围 | 已包含优化 |
 |------|------|------|------------|
 | **Phase 1 (MVP)** | 已完成 | 四 Agent 顺序链路，CLI + Streamlit，控制台可观测，基础 provenance | 优化2（独立 Verifier 雏形）、优化3（模型层质检）、优化5（简化重试） |
-| **Phase 1.5 (Product Demo)** | 当前优先 | 保留真实 CrewAI 链路，新增 FastAPI API 层、SSE 事件流、React 全屏对话 Demo、Dashboard、SQLite/JSON run store、云端可访问部署 | 优化8、8.1、11 的轻量落地 |
+| **Phase 1.5 (Product Demo)** | 当前优先 | 保留真实 CrewAI 链路，新增 FastAPI API 层、SSE 事件流、Web App（Demo / Dashboard / Report）、SQLite/JSON run store、云端可访问部署 | 优化8、8.1、11 的轻量落地 |
 | **Phase 2 (增强)** | 1-2 个月 | 自研 Coordinator 主循环，Scratchpad 文件系统，DAG 节点，工具层强制溯源，Run Inspector，短期任务记忆 | 优化1、6、7、8、9、10、12 部分 |
 | **Phase 3 (平台化集成)** | 3-6 个月 | PostgreSQL/Redis、长期记忆库，语义 Diff，韧性设计（熔断/降级/人工兜底），权限系统，完整 OTel，企业级 Dashboard，MCP Server，飞书/钉钉机器人 | 优化4（完整）、优化5（人工兜底）、优化8.2、优化11 |
 
@@ -551,7 +578,7 @@ permissions = {
 |------|-------------|-------------------|
 | 多 Agent 框架 | CrewAI | 自研主循环 + 工具化 |
 | 模型 API | MiMo-V2.5 / Pro | 支持多模型 fallback |
-| 前端 | Streamlit | React/Vite 全屏 Demo + Dashboard |
+| 前端 | Streamlit | React/Vite Web App（Demo / Dashboard / Report） |
 | API 服务 | CLI / Streamlit 内嵌调用 | FastAPI REST + SSE |
 | 存储 | 内存 dict | SQLite/JSON run store → 文件系统 Scratchpad → MinIO |
 | 状态管理 | 无 | SQLite → Redis |
