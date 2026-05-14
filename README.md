@@ -22,7 +22,7 @@
 | **主循环 + 工具调用** | Coordinator 主循环动态调度四类工具，Agent 不直接执行，只通过工具协作 |
 | **Scratchpad 共享目录** | Phase 2 将实现文件系统 Scratchpad，采集数据旁路传递，避免上下文爆炸 |
 | **独立 Verification Agent** | 质检 Agent 使用 MiMo-V2.5-Pro，**不继承撰写者历史**，独立判断，防确认偏误 |
-| **工具层强制溯源** | 每条采集数据必须附带 `source_references`，缺失则质检不通过 |
+| **规则层溯源校验** | `runner.py` 会检查最终报告是否包含来源标注 / URL / provenance，缺失则判失败 |
 | **流式 Generator 透出** | Phase 1 使用 `verbose=True` 控制台实时打印，Phase 2 升级 SSE |
 | **分层可观测性** | 控制台日志（L3 语义追踪雏形）+ OTel 指标（Phase 2） |
 
@@ -52,7 +52,7 @@
                                   ▼
                          ✅ Markdown 报告
                          📎 Provenance 溯源索引
-                         🔍 控制台可观测日志
+                         🔍 质检 JSON + 控制台可观测日志
 ```
 
 ---
@@ -87,7 +87,7 @@
 
 # 配置 API Key（在 Colab "🔑" 图标中添加环境变量)
 import os
-os.environ["MIMO_BASE_URL"] = "https://api.minimax.chat/v1"  # 或你的 MiMo 地址
+os.environ["MIMO_BASE_URL"] = "https://api.xiaomimimo.com/v1"
 os.environ["MIMO_API_KEY"] = "你的_API_KEY"
 
 # 运行示例
@@ -111,6 +111,13 @@ cp .env.example .env
 # 4. 运行
 python main.py '{"productName":"飞书","competitors":["钉钉"],"dimensions":[{"name":"定价","indicators":["免费套餐"]}]}'
 ```
+
+CLI 会输出两部分内容：
+
+- 最终 Markdown 报告
+- Verifier 质检 JSON
+
+如果首次质检未通过，系统会自动触发一次 Writer + Verifier 重写复检；如果复检仍未通过，CLI 会以非零退出码结束，并保留质检问题用于人工复核。
 
 ### 方式三：Streamlit 界面
 
@@ -152,10 +159,11 @@ streamlit run app.py
 
 ## 🔬 核心技术亮点
 
-1. **Provenance 溯源约束**：每条分析结论必须附带 `source_references`（URL + 原文片段），无溯源则质检不通过
+1. **Provenance 溯源约束**：报告必须包含来源标注 / URL / provenance 索引；缺失则规则层直接判失败
 2. **独立 Verification Agent**：使用 MiMo-V2.5-Pro，不继承撰写历史，主动找问题而非确认正确性
-3. **置信度分级处理**：confidence ≥ 90 通过，60-90 待复核，< 60 触发重试
+3. **最小重试闭环**：首次质检失败时，自动重跑 Writer + Verifier 一次；复检仍失败则返回质检问题并非零退出
 4. **CrewAI 顺序执行**：低复杂度快速出活，Phase 2 可升级为并行 + 动态 DAG
+5. **直连 MiMo API**：启动时清理系统代理环境变量，默认不走代理，避免本机代理设置干扰 API 调用
 
 ---
 
@@ -165,6 +173,7 @@ streamlit run app.py
 CompEyeAgent/
 ├── main.py                  # CLI 入口
 ├── app.py                   # Streamlit 可选入口
+├── runner.py                # Phase 1 运行器：质检校验 + 最小重写闭环
 ├── crew/
 │   ├── crew.py             # CrewAI Crew 组装
 │   └── agents/
@@ -196,15 +205,23 @@ CompEyeAgent/
 
 ```bash
 # MiMo API（OpenAI 兼容）
-MIMO_BASE_URL=https://api.minimax.chat/v1
+MIMO_BASE_URL=https://api.xiaomimimo.com/v1
 MIMO_API_KEY=your_api_key_here
 
 # 模型分配（可选，默认如下）
-COLLECTOR_MODEL=xiaomi/mimo-v2.5
-ANALYZER_MODEL=xiaomi/mimo-v2.5
-WRITER_MODEL=xiaomi/mimo-v2.5
-VERIFIER_MODEL=xiaomi/mimo-v2.5-pro
+COLLECTOR_MODEL=mimo-v2.5
+ANALYZER_MODEL=mimo-v2.5
+WRITER_MODEL=mimo-v2.5
+VERIFIER_MODEL=mimo-v2.5-pro
 ```
+
+### API 连通性测试
+
+```bash
+python test_api.py
+```
+
+预期返回 `Status: 200`。脚本会读取 `.env`，并使用 `requests.Session(trust_env=False)` 直连 MiMo API，不读取系统代理设置。
 
 ---
 
