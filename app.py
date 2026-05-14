@@ -513,8 +513,10 @@ def report_view_requested() -> bool:
     return st.query_params.get("view") == "report"
 
 
-def report_page_url() -> str:
-    return "?view=report"
+def render_report_button(key: str) -> None:
+    if st.button("查看完整报告", key=key, use_container_width=True):
+        st.query_params["view"] = "report"
+        st.rerun()
 
 
 def render_report_page() -> None:
@@ -625,7 +627,7 @@ with center_col:
                 )
                 st.markdown("**报告预览**")
                 st.markdown(latest_result.report[:520] + ("..." if len(latest_result.report) > 520 else ""))
-                st.link_button("查看完整报告", report_page_url(), use_container_width=True)
+                render_report_button("open_report_from_summary")
 
 with right_col:
     with st.container(border=True):
@@ -636,7 +638,13 @@ with right_col:
         status_slot = st.empty()
         progress_slot = st.empty()
         with stage_slot:
-            render_stage_board()
+            if st.session_state.get("latest_result") is None:
+                render_stage_board()
+            else:
+                render_stage_board(done={key for key, _, _, _ in STAGES})
+        if st.session_state.get("latest_result") is not None:
+            status_slot.success("Run complete")
+            progress_slot.progress(1.0, text="Run complete")
         if show_brief:
             st.markdown("**Brief JSON**")
             st.json(build_inputs(), expanded=False)
@@ -679,25 +687,4 @@ if run_button:
         progress_slot.progress(1.0, text="Run complete")
         st.session_state.latest_result = result
         st.session_state.latest_brief = validated
-
-        status_text = "Passed" if result.passed else "Needs review"
-        retry_text = "Yes" if result.retried else "No"
-        report_size = f"{len(result.report)} chars"
-        st.markdown(
-            "<div class='metric-strip'>"
-            + render_metric("Verifier", status_text)
-            + render_metric("Rewrite", retry_text)
-            + render_metric("Report", report_size)
-            + render_metric("Output", validated["analysisType"])
-            + "</div>",
-            unsafe_allow_html=True,
-        )
-
-        if result.passed:
-            st.success("Verifier accepted the report.")
-        else:
-            st.warning("Report generated. Verifier found evidence or reasoning issues for review.")
-
-        st.markdown("**报告预览**")
-        st.markdown(result.report[:900] + ("..." if len(result.report) > 900 else ""))
-        st.link_button("查看完整报告", report_page_url(), use_container_width=True)
+        st.rerun()
