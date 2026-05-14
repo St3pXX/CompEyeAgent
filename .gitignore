@@ -48,3 +48,14 @@ streamlit*.log
 
 # Local Phase 1.5 run store
 data/
+
+# Local brainstorming companion files
+.superpowers/
+
+# Frontend dependencies and build output
+frontend/node_modules/
+frontend/dist/
+frontend/vite*.log
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts

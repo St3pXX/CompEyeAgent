@@ -8,6 +8,7 @@ from typing import Any
 from models.schema import CompetitorInput, RunRecord
 from runner import run_analysis
 from storage.run_store import SQLiteRunStore
+from services.source_indexer import extract_source_references
 
 
 STAGE_AGENT = {
@@ -59,12 +60,19 @@ class RunService:
             self.store.create_artifact(run_id, "brief_json", json.dumps(run.input.model_dump(), ensure_ascii=False, indent=2))
             self.store.create_artifact(run_id, "report_markdown", result.report)
             self.store.create_artifact(run_id, "verifier_json", result.verifier_result)
+            sources = extract_source_references(result.report)
+            self.store.create_sources(run_id, sources)
+            self.store.create_artifact(
+                run_id,
+                "provenance_index",
+                json.dumps([source.model_dump() for source in sources], ensure_ascii=False, indent=2),
+            )
             self.store.append_event(
                 run_id,
                 "artifact.ready",
                 "报告、质检结果和输入 brief 已生成",
                 agent="Coordinator",
-                payload={"passed": result.passed, "retried": result.retried},
+                payload={"passed": result.passed, "retried": result.retried, "source_count": len(sources)},
             )
             self.store.update_run_status(run_id, status, completed=True)
             self.store.append_event(

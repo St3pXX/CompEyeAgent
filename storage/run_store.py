@@ -196,11 +196,37 @@ class SQLiteRunStore:
                 """
                 SELECT * FROM source_references
                 WHERE run_id = ?
-                ORDER BY retrieved_at ASC, source_id ASC
+                ORDER BY rowid ASC
                 """,
                 (run_id,),
             ).fetchall()
         return [self._source_from_row(row) for row in rows]
+
+    def create_sources(self, run_id: str, sources: list[Any]) -> list[SourceRecord]:
+        if not sources:
+            return []
+        with self._connection() as conn:
+            conn.executemany(
+                """
+                INSERT INTO source_references (
+                    source_id, run_id, conclusion_id, uri, snippet, confidence, retrieved_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        str(uuid.uuid4()),
+                        run_id,
+                        source.conclusion_id,
+                        source.uri,
+                        source.snippet,
+                        source.confidence,
+                        source.retrieved_at,
+                    )
+                    for source in sources
+                ],
+            )
+        return self.list_sources(run_id)
 
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:

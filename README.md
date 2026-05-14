@@ -251,6 +251,23 @@ CompEyeAgent/
 
 Phase 1.5 在线产品 Demo 的详细执行计划和当前进度见 [docs/PHASE_1_5_PLAN.md](docs/PHASE_1_5_PLAN.md)。
 
+### React Web App 本地启动
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+开发服务器默认监听 `http://localhost:5173`，并把 `/api/*` 与 `/sse/*` 代理到本地 FastAPI `http://127.0.0.1:8000`。
+
+生产构建：
+
+```bash
+cd frontend
+npm run build
+```
+
 ---
 
 ## 🛠️ 环境变量

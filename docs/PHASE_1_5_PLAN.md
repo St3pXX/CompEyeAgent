@@ -119,11 +119,11 @@ provenance_index
 | 5 | 接入后台执行 | 已完成 | `services/run_service.py` 已用 BackgroundTasks 调用 `run_analysis` |
 | 6 | 接入 `progress_callback` | 已完成 | Agent 进度会写入 `agent_events` |
 | 7 | 写入报告产物 | 已完成 | 运行完成后写入 brief、report、verifier artifact |
-| 8 | 来源索引提取 | 待开始 | 从报告 URL / provenance 区块提取 `source_references` |
-| 9 | React / Vite 前端骨架 | 待开始 | 建立 `/demo`、`/dashboard/:run_id`、`/reports/:run_id` |
-| 10 | Demo 页面 | 待开始 | 全屏任务创建，支持标签选择和自定义输入 |
-| 11 | Dashboard 页面 | 待开始 | 订阅 SSE，展示 Agent 状态、事件时间线、报告入口 |
-| 12 | Report 页面 | 待开始 | 展示 Markdown 报告、Verifier JSON、Input Brief、来源索引 |
+| 8 | 来源索引提取 | 已完成 | 从报告 Markdown 提取 URL，写入 `source_references`，并生成 `provenance_index` artifact |
+| 9 | React / Vite 前端骨架 | 已完成 | `frontend/` 已建立 `/demo`、`/dashboard/:run_id`、`/reports/:run_id` 路由骨架 |
+| 10 | Demo 页面 | 已完成 | 已建立对话式需求澄清页骨架，包含快捷案例、历史对话和内联报告入口 |
+| 11 | Dashboard 页面 | 已完成 | 已建立 Agent 状态、事件时间线、报告入口骨架；SSE 接入待后续实现 |
+| 12 | Report 页面 | 已完成 | 已建立 Markdown 报告、Verifier JSON、Input Brief、来源索引和下载入口骨架 |
 | 13 | 前后端同服务部署 | 待开始 | FastAPI 托管 React build 静态资源 |
 | 14 | 云端部署 | 待开始 | 配置环境变量、运行数据目录和启动命令 |
 | 15 | README / DESIGN 同步 | 待开始 | 更新在线体验、启动方式和 Phase 1.5 进度 |
