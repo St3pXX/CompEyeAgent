@@ -36,7 +36,7 @@
 | **独立 Verification Agent**（全新进程，不继承历史，防确认偏误） | 质检 Agent 使用不同模型实例，仅接收报告+证据 | Phase 1 已实现 |
 | **工具层强制溯源**（工具 API 要求返回 sources，否则报错） | Phase 1 先通过 Prompt + 规则层 provenance guard 约束输出；Phase 2 升级为工具 API 层强制校验与自动重试 | Phase 1 雏形 / Phase 2 强化 |
 | **可观测性分层**（产品事件 + OTel 指标 + 会话语义追踪） | 三层模型：业务事件 / 技术指标 / 决策链路 | Phase 2 |
-| **流式 Generator 透出**（实时输出内部活动，支持中断） | `async generator` + SSE 推送 Agent 状态 | Phase 2 |
+| **流式 Generator 透出**（实时输出内部活动，支持中断） | Phase 1.5 先用 FastAPI SSE 包装 `progress_callback`，Phase 2 升级 `async generator` | Phase 1.5 / Phase 2 |
 | **Coordinator 委派原则**（主控不直接执行，只分解任务和调度） | 设计上强调委派优先，实现上允许 Coordinator 调用部分工具 | 设计文档约束 |
 
 ---
@@ -46,11 +46,14 @@
 ```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                            用户 / UI                                     │
-│                    (CLI / Streamlit / 未来 API)                          │
+│        Product Site / Full-screen Demo / Dashboard / CLI                 │
 └─────────────────────────────────┬───────────────────────────────────────┘
-                                  │ (流式事件 SSE)
+                                  │ FastAPI / SSE / REST
 ┌─────────────────────────────────▼───────────────────────────────────────┐
-│                        Coordinator (主控 Agent)                          │
+│                        API + Coordinator (主控 Agent)                    │
+│  - /api/runs 创建任务                                                    │
+│  - /sse/runs/{id} 推送 Agent 事件                                        │
+│  - /api/runs/{id} 查询结果与产物                                         │
 │  - 主循环 while(tool_calls)                                              │
 │  - 任务分解与 DAG 生成                                                    │
 │  - 子 Agent 调度 (通过工具调用)                                           │
@@ -66,13 +69,14 @@
                 └─────────────┴─────────────┴─────────────┘
                                   │
                 ┌─────────────────▼─────────────────────────────────┐
-                │            Scratchpad (共享文件系统)               │
+                │            Scratchpad + Run Store                  │
                 │  - raw/     采集原始数据 (JSON + 元数据)           │
                 │  - parsed/  清洗后结构化数据                       │
-                │  - analysis/分析结论 (含 provenance)              │
-                │  - drafts/  报告草稿                              │
-                │  - tasks/   任务状态 (DAG 节点文件)               │
-                │  - provenance/溯源映射索引                        │
+                │  - analysis/分析结论 (含 provenance)               │
+                │  - drafts/  报告草稿                               │
+                │  - tasks/   任务状态 (DAG 节点文件)                │
+                │  - provenance/溯源映射索引                         │
+                │  - runs/events/artifacts 持久化任务、事件流和产物  │
                 └─────────────────┬─────────────────────────────────┘
                                   │
                 ┌─────────────────▼─────────────────────────────────┐
@@ -161,6 +165,53 @@ class Provenance(BaseModel):
   "timestamp": "2026-05-13T10:00:01Z"
 }
 ```
+
+### 4.5 在线产品运行数据模型（Phase 1.5）
+
+Phase 1.5 的目标不是提前做重型企业系统，而是把当前可运行链路包装成可分享、可观测、可持续演进的在线产品。数据模型以“够用、可迁移”为原则，优先 SQLite 或本地 JSON 文件；进入 Phase 3 后再升级 PostgreSQL / Redis / 对象存储。
+
+```text
+analysis_runs
+- run_id
+- product_name
+- competitors
+- dimensions
+- analysis_type
+- status              # queued | running | passed | needs_review | failed
+- created_at
+- completed_at
+
+agent_events
+- event_id
+- run_id
+- type                # agent.start | agent.progress | agent.done | verifier.issue | artifact.ready
+- agent               # Collector | Analyzer | Writer | Verifier | Coordinator
+- stage
+- message
+- payload_json
+- created_at
+
+artifacts
+- artifact_id
+- run_id
+- kind                # report_markdown | verifier_json | brief_json | provenance_index
+- uri_or_path
+- content_preview
+- created_at
+
+source_references
+- source_id
+- run_id
+- conclusion_id
+- uri
+- snippet
+- confidence
+- retrieved_at
+```
+
+**短期取舍**
+- 产品 Demo：SQLite / JSON 足够，部署简单，能支撑页面刷新后继续查看任务与报告。
+- 正式云部署：PostgreSQL 存 run/event/artifact 元数据，Redis 支撑任务队列和实时状态缓存，对象存储保存大报告、截图和原始证据。
 
 ---
 
@@ -341,8 +392,62 @@ async def run_analysis_stream(user_input):
 
 **Phase 落地**
 - Phase 1：控制台实时打印（`print` 代替 `yield`）
-- Phase 2：实现真正的 `async generator` + SSE 端点
+- Phase 1.5：在现有 `runner.py progress_callback` 基础上封装 FastAPI SSE，先推送 `agent.start / agent.progress / agent.done / verifier.issue / artifact.ready` 事件，支撑全屏 Demo 与 Dashboard 实时联动
+- Phase 2：实现真正的 `async generator` + Coordinator 事件流
 - Phase 3：支持 WebSocket 双向通信
+
+### 优化 8.1：独立全屏 Demo + Dashboard
+
+**原理**
+Streamlit 适合快速证明链路，但复杂产品体验会遇到布局、路由、实时交互和顶部框架限制。Phase 1.5 将当前 Demo 拆成独立前端与后端 API：
+
+```text
+React / Vite Frontend
+├── /              产品介绍页
+├── /demo          全屏对话式任务发起
+├── /dashboard     Agent 协作过程可视化
+└── /reports/:id   完整报告、Verifier JSON、Provenance 索引
+
+FastAPI Backend
+├── POST /api/runs
+├── GET  /api/runs/{run_id}
+├── GET  /sse/runs/{run_id}
+└── GET  /api/artifacts/{artifact_id}
+```
+
+**工程实现**
+- `/demo` 负责输入目标产品、竞品、维度和重点指标，提交后拿到 `run_id`
+- `/dashboard` 订阅同一个 `run_id` 的 SSE，渲染 Agent 时间线、状态卡片、事件日志、产物链接
+- `/reports/:id` 展示完整 Markdown 报告、Verifier JSON、输入 Brief 和来源索引
+- 当前 CrewAI 顺序链路不重写，只通过 API 层包装，保证产品体验升级不阻塞核心算法演进
+
+**Phase 落地**
+- Phase 1.5：React + FastAPI + SSE + SQLite/JSON，形成可持续迭代的在线产品 Demo
+- Phase 2：Dashboard 对接 DAG 节点、Scratchpad 文件、Run Inspector 下钻视图
+- Phase 3：接入权限、团队空间、长期记忆、完整审计日志
+
+### 优化 8.2：MCP 与协作平台接入
+
+**原理**
+系统最终不只作为一个网页应用存在，还应作为企业知识工作流中的可调用能力。通过 MCP Server 暴露竞品分析工具，使 Claude Code、Codex 等 Agent 工作台可以直接发起分析、查询报告、读取 provenance；通过飞书、钉钉等协作平台接入，把分析结果送入企业日常工作流。
+
+**MCP 工具形态**
+```text
+compeye.create_run(input)          # 创建竞品分析任务
+compeye.get_run(run_id)            # 查询任务状态
+compeye.stream_events(run_id)      # 订阅 Agent 执行事件
+compeye.get_report(run_id)         # 获取 Markdown 报告
+compeye.get_sources(run_id)        # 获取 provenance / source references
+```
+
+**协作平台形态**
+- 飞书：机器人命令发起分析、报告推送到飞书文档、质检失败进入群通知或审批流程
+- 钉钉：机器人交互、报告卡片、任务状态通知、人工复核入口
+- Webhook：向企业内部系统推送 `artifact.ready`、`verifier.issue`、`run.failed` 等事件
+
+**Phase 落地**
+- Phase 2：先定义 MCP 工具协议和后端 API 对齐，保证 Web、CLI、MCP 复用同一套 run/event/artifact 模型
+- Phase 3：提供正式 MCP Server、飞书/钉钉机器人、Webhook 与企业权限接入
 
 ---
 
@@ -396,7 +501,8 @@ if plan_mode_enabled:
 
 **Phase 落地**
 - Phase 1：无持久化
-- Phase 2：短期记忆（文件存储任务状态）
+- Phase 1.5：SQLite / JSON 保存 `analysis_runs`、`agent_events`、`artifacts`、`source_references`，保证刷新页面后仍能查看 Dashboard 与报告
+- Phase 2：短期记忆（文件存储任务状态）与 Scratchpad URI 打通
 - Phase 3：长期记忆 + 相关性检索
 
 ---
@@ -433,8 +539,9 @@ permissions = {
 | 阶段 | 时间 | 范围 | 已包含优化 |
 |------|------|------|------------|
 | **Phase 1 (MVP)** | 已完成 | 四 Agent 顺序链路，CLI + Streamlit，控制台可观测，基础 provenance | 优化2（独立 Verifier 雏形）、优化3（模型层质检）、优化5（简化重试） |
-| **Phase 2 (增强)** | 1-2 个月 | 自研 Coordinator 主循环，Scratchpad 文件系统，流式 SSE，工具层强制溯源，短期记忆 | 优化1、6、7、8、9、10、12 部分 |
-| **Phase 3 (企业级)** | 3-6 个月 | 长期记忆库，语义 Diff，韧性设计（熔断/降级/人工兜底），权限系统，完整 OTel | 优化4（完整）、优化5（人工兜底）、优化11 |
+| **Phase 1.5 (Product Demo)** | 当前优先 | 保留真实 CrewAI 链路，新增 FastAPI API 层、SSE 事件流、React 全屏对话 Demo、Dashboard、SQLite/JSON run store、云端可访问部署 | 优化8、8.1、11 的轻量落地 |
+| **Phase 2 (增强)** | 1-2 个月 | 自研 Coordinator 主循环，Scratchpad 文件系统，DAG 节点，工具层强制溯源，Run Inspector，短期任务记忆 | 优化1、6、7、8、9、10、12 部分 |
+| **Phase 3 (平台化集成)** | 3-6 个月 | PostgreSQL/Redis、长期记忆库，语义 Diff，韧性设计（熔断/降级/人工兜底），权限系统，完整 OTel，企业级 Dashboard，MCP Server，飞书/钉钉机器人 | 优化4（完整）、优化5（人工兜底）、优化8.2、优化11 |
 
 ---
 
@@ -444,15 +551,19 @@ permissions = {
 |------|-------------|-------------------|
 | 多 Agent 框架 | CrewAI | 自研主循环 + 工具化 |
 | 模型 API | MiMo-V2.5 / Pro | 支持多模型 fallback |
-| 存储 | 内存 dict | 文件系统 (scratchpad) → MinIO |
+| 前端 | Streamlit | React/Vite 全屏 Demo + Dashboard |
+| API 服务 | CLI / Streamlit 内嵌调用 | FastAPI REST + SSE |
+| 存储 | 内存 dict | SQLite/JSON run store → 文件系统 Scratchpad → MinIO |
 | 状态管理 | 无 | SQLite → Redis |
-| 可观测性 | 控制台日志 | OpenTelemetry + ClickHouse + Grafana |
+| 可观测性 | 控制台日志 | Dashboard 事件流 → OpenTelemetry + ClickHouse + Grafana |
 | 流式传输 | 无 | SSE → WebSocket |
 | 记忆库 | 无 | ChromaDB + NetworkX |
+| 外部集成 | 无 | MCP Server、飞书/钉钉机器人、Webhook |
 
 **部署建议**
+- Phase 1.5 在线部署：FastAPI + React 静态资源同服务部署，SQLite/JSON 本地持久化；可选 Render / Railway / Fly.io / 云服务器
 - 开发测试：Docker Compose（Python + Redis + MinIO）
-- 生产环境：K8s + 对象存储 + Prometheus stack
+- 生产环境：K8s + PostgreSQL / Redis / 对象存储 + Prometheus stack
 
 ---
 
