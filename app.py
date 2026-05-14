@@ -64,6 +64,7 @@ SAMPLES = {
 }
 
 DEFAULTS = SAMPLES["协同办公"]
+WORKSPACE_PANEL_HEIGHT = 620
 
 
 def inject_styles() -> None:
@@ -117,7 +118,7 @@ def inject_styles() -> None:
         .block-container {
             max-width: 1480px;
             padding: .55rem 1.2rem .8rem;
-            height: 100vh;
+            max-height: 100vh;
             overflow: hidden;
         }
 
@@ -127,6 +128,31 @@ def inject_styles() -> None:
 
         [data-testid="stVerticalBlockBorderWrapper"] {
             border-radius: 22px;
+            overflow-y: auto;
+            overscroll-behavior: contain;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"]:has(> div[style*="height: 620px"]) {
+            height: calc(100vh - 1.7rem) !important;
+            max-height: calc(100vh - 1.7rem) !important;
+            overflow-y: auto !important;
+            overscroll-behavior: contain;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"]:has(> div[style*="height: 620px"]) > div {
+            min-height: 100% !important;
+            overflow: visible !important;
+        }
+
+        [data-testid="stVerticalBlockBorderWrapper"]:has(> div[style*="height: 360px"]) {
+            overflow-y: auto !important;
+            overscroll-behavior: contain;
+        }
+
+        div[style*="height: 620px"],
+        div[style*="height: 360px"] {
+            overflow-y: auto !important;
+            overscroll-behavior: contain;
         }
 
         [data-testid="stVerticalBlockBorderWrapper"] > div {
@@ -639,7 +665,7 @@ if report_view_requested():
 left_col, center_col, right_col = st.columns([1.1, 1.35, 1.05], gap="medium")
 
 with left_col:
-    with st.container(border=True, height=690):
+    with st.container(border=True, height=WORKSPACE_PANEL_HEIGHT):
         st.markdown("## 配置分析")
         st.caption("填写目标产品、竞品、预设维度或自定义维度。")
 
@@ -659,7 +685,7 @@ with left_col:
         run_button = st.button("开始分析", type="primary", use_container_width=True)
 
 with center_col:
-    with st.container(border=True, height=690):
+    with st.container(border=True, height=WORKSPACE_PANEL_HEIGHT):
         st.markdown("### 报告总结")
         st.caption("完整报告通过按钮进入独立页面查看。")
         result_container = st.container()
@@ -689,7 +715,7 @@ with center_col:
                 render_report_button("open_report_from_summary")
 
 with right_col:
-    with st.container(border=True, height=690):
+    with st.container(border=True, height=WORKSPACE_PANEL_HEIGHT):
         st.markdown("### Agent 执行追踪")
         quick_mode = st.toggle("快速演示模式", value=True, help="关闭后启用失败自动重写一次。")
         show_brief = st.toggle("显示结构化 brief", value=False)
