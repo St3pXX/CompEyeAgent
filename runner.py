@@ -13,6 +13,7 @@ from tasks.write_task import write_task
 
 
 SOURCE_MARKERS = ("[来源:", "source_references", "provenance", "来源 URL", "来源:")
+SOURCE_BLOCK_MARKERS = ("Provenance 索引", "provenance 索引", "来源索引", "参考来源")
 
 
 @dataclass
@@ -94,8 +95,7 @@ def _rewrite_and_verify(inputs: dict[str, Any], issues: list[str]) -> tuple[Any,
 def _verification_issues(report: str, verifier_result: str) -> list[str]:
     issues: list[str] = []
 
-    if not _has_sources(report):
-        issues.append("最终报告缺少来源标注或 provenance 索引")
+    issues.extend(_provenance_guard(report))
 
     verdict = _parse_verifier_result(verifier_result)
     if verdict:
@@ -114,10 +114,40 @@ def _verification_issues(report: str, verifier_result: str) -> list[str]:
     return issues
 
 
-def _has_sources(report: str) -> bool:
-    if any(marker in report for marker in SOURCE_MARKERS):
-        return True
-    return bool(re.search(r"https?://\S+", report))
+def _provenance_guard(report: str) -> list[str]:
+    issues: list[str] = []
+    urls = re.findall(r"https?://[^\s\])>，。；,]+", report)
+
+    if not any(marker in report for marker in SOURCE_BLOCK_MARKERS):
+        issues.append("最终报告缺少 provenance / 来源索引区块")
+
+    if not urls:
+        issues.append("最终报告缺少可访问 URL")
+
+    source_tag_count = len(re.findall(r"\[来源:\s*[^\]]+\]", report))
+    claim_like_lines = _claim_like_lines(report)
+    if claim_like_lines and source_tag_count < len(claim_like_lines):
+        issues.append(
+            f"来源标注不足：检测到 {len(claim_like_lines)} 条结论式条目，但只有 {source_tag_count} 个 [来源: ...] 标注"
+        )
+
+    if "待核实" in report and source_tag_count == 0:
+        issues.append("报告包含待核实内容，但没有提供来源标注或复核入口")
+
+    return issues
+
+
+def _claim_like_lines(report: str) -> list[str]:
+    lines: list[str] = []
+    for raw_line in report.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        if re.match(r"^#{1,6}\s+", line) or "|" in line:
+            continue
+        if re.match(r"^([-*]|\d+[.)])\s+", line) and len(line) >= 18:
+            lines.append(line)
+    return lines
 
 
 def _parse_verifier_result(verifier_result: str) -> dict[str, Any] | None:
