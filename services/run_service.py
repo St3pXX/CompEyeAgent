@@ -6,7 +6,6 @@ import json
 from typing import Any
 
 from models.schema import CompetitorInput, RunRecord
-from runner import run_analysis
 from storage.run_store import SQLiteRunStore
 from services.source_indexer import extract_source_references
 
@@ -51,6 +50,8 @@ class RunService:
             )
 
         try:
+            from runner import run_analysis
+
             result = run_analysis(
                 run.input.model_dump(),
                 allow_retry=allow_retry,

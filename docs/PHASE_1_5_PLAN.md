@@ -124,7 +124,7 @@ provenance_index
 | 10 | Demo 页面 | 已完成 | 对话式需求澄清页已接 `POST /api/runs`，可用澄清后的 brief 创建真实任务并跳转 Dashboard |
 | 11 | Dashboard 页面 | 已完成 | 已接 `GET /api/runs/{run_id}` 和 `/sse/runs/{run_id}`，可用真实事件更新 Agent 状态、时间线和报告入口 |
 | 12 | Report 页面 | 已完成 | 已接真实 artifacts / sources，展示 Markdown 报告、Verifier JSON、Input Brief、来源索引并支持下载 |
-| 13 | 前后端同服务部署 | 待开始 | FastAPI 托管 React build 静态资源 |
+| 13 | 前后端同服务部署 | 已完成 | FastAPI 已托管 `frontend/dist` 静态资源，并支持 React 路由刷新回退到 `index.html` |
 | 14 | 云端部署 | 待开始 | 配置环境变量、运行数据目录和启动命令 |
 | 15 | README / DESIGN 同步 | 待开始 | 更新在线体验、启动方式和 Phase 1.5 进度 |
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 import sys
 
@@ -17,7 +19,6 @@ for stream in (sys.stdout, sys.stderr):
     if hasattr(stream, "reconfigure"):
         stream.reconfigure(encoding="utf-8", errors="replace")
 
-from crewai import LLM
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -28,6 +29,8 @@ MIMO_API_KEY = os.getenv("MIMO_API_KEY", "")
 
 def create_llm(model_name: str) -> LLM:
     """Create a CrewAI LLM instance configured for the MiMo OpenAI-compatible API."""
+    from crewai import LLM
+
     litellm_model = model_name
     if not litellm_model.startswith("openai/"):
         litellm_model = f"openai/{litellm_model}"

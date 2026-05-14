@@ -6,11 +6,13 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 
 import config.settings
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 
 from models.schema import CreateRunRequest, CreateRunResponse, RunDetailResponse
 from services.run_service import RunService
@@ -19,6 +21,8 @@ from storage.run_store import SQLiteRunStore, TERMINAL_STATUSES
 
 store = SQLiteRunStore()
 run_service = RunService(store)
+FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
+FRONTEND_INDEX = FRONTEND_DIST / "index.html"
 
 app = FastAPI(
     title="CompEye Agent API",
@@ -33,6 +37,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+if (FRONTEND_DIST / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="frontend-assets")
 
 
 @app.get("/health")
@@ -152,6 +159,18 @@ def get_run_trace(run_id: str) -> dict[str, object]:
     return run_service.empty_extension_payload(run_id, "trace")
 
 
+@app.get("/")
+def serve_frontend_root() -> FileResponse:
+    return _frontend_index()
+
+
+@app.get("/{path:path}")
+def serve_frontend_route(path: str) -> FileResponse:
+    if path.startswith(("api/", "sse/")):
+        raise HTTPException(status_code=404, detail="Not found")
+    return _frontend_index()
+
+
 async def _event_stream(run_id: str, after_event_id: int) -> AsyncIterator[str]:
     last_event_id = after_event_id
     while True:
@@ -175,3 +194,9 @@ def _sse(event_type: str, data: dict[str, object], *, event_id: int | None = Non
     lines.append(f"event: {event_type}")
     lines.append(f"data: {json.dumps(data, ensure_ascii=False, default=str)}")
     return "\n".join(lines) + "\n\n"
+
+
+def _frontend_index() -> FileResponse:
+    if not FRONTEND_INDEX.exists():
+        raise HTTPException(status_code=404, detail="Frontend build not found. Run `npm run build` in frontend/.")
+    return FileResponse(FRONTEND_INDEX)

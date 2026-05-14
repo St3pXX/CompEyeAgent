@@ -270,6 +270,15 @@ cd frontend
 npm run build
 ```
 
+同服务启动：
+
+```bash
+cd ..
+uvicorn api_app:app --host 0.0.0.0 --port 8000
+```
+
+构建后，FastAPI 会直接托管 `frontend/dist`。`/api/*` 和 `/sse/*` 保持后端接口，`/demo`、`/dashboard/:runId`、`/reports/:runId` 等 React 路由刷新会回退到 `index.html`。
+
 ---
 
 ## 🛠️ 环境变量
