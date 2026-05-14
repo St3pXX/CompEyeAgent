@@ -64,7 +64,7 @@ SAMPLES = {
 }
 
 DEFAULTS = SAMPLES["协同办公"]
-WORKSPACE_PANEL_HEIGHT = 620
+WORKSPACE_PANEL_HEIGHT = 560
 
 
 def inject_styles() -> None:
@@ -128,31 +128,6 @@ def inject_styles() -> None:
 
         [data-testid="stVerticalBlockBorderWrapper"] {
             border-radius: 22px;
-            overflow-y: auto;
-            overscroll-behavior: contain;
-        }
-
-        [data-testid="stVerticalBlockBorderWrapper"]:has(> div[style*="height: 620px"]) {
-            height: calc(100vh - 1.7rem) !important;
-            max-height: calc(100vh - 1.7rem) !important;
-            overflow-y: auto !important;
-            overscroll-behavior: contain;
-        }
-
-        [data-testid="stVerticalBlockBorderWrapper"]:has(> div[style*="height: 620px"]) > div {
-            min-height: 100% !important;
-            overflow: visible !important;
-        }
-
-        [data-testid="stVerticalBlockBorderWrapper"]:has(> div[style*="height: 360px"]) {
-            overflow-y: auto !important;
-            overscroll-behavior: contain;
-        }
-
-        div[style*="height: 620px"],
-        div[style*="height: 360px"] {
-            overflow-y: auto !important;
-            overscroll-behavior: contain;
         }
 
         [data-testid="stVerticalBlockBorderWrapper"] > div {
@@ -168,6 +143,7 @@ def inject_styles() -> None:
 
         [data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar,
         [data-testid="stVerticalBlock"]::-webkit-scrollbar,
+        div[data-testid="stVerticalBlockBorderWrapper"] > div::-webkit-scrollbar,
         .stMarkdown::-webkit-scrollbar {
             width: 8px;
             height: 8px;
@@ -175,6 +151,7 @@ def inject_styles() -> None:
 
         [data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar-thumb,
         [data-testid="stVerticalBlock"]::-webkit-scrollbar-thumb,
+        div[data-testid="stVerticalBlockBorderWrapper"] > div::-webkit-scrollbar-thumb,
         .stMarkdown::-webkit-scrollbar-thumb {
             background: rgba(102, 112, 133, .28);
             border-radius: 999px;
@@ -668,6 +645,7 @@ with left_col:
     with st.container(border=True, height=WORKSPACE_PANEL_HEIGHT):
         st.markdown("## 配置分析")
         st.caption("填写目标产品、竞品、预设维度或自定义维度。")
+        run_button = st.button("开始分析", type="primary", use_container_width=True)
 
         template_cols = st.columns(3, gap="small")
         for index, sample_name in enumerate(SAMPLES):
@@ -682,7 +660,6 @@ with left_col:
         st.text_area("自定义维度", key="custom_dimensions", height=72, help="用逗号分隔，例如：生态集成、渠道策略、合规能力。")
         st.text_area("重点指标", key="custom_indicators", height=82)
         st.selectbox("输出形式", ["SWOT", "对比表格", "综合报告"], key="analysis_type")
-        run_button = st.button("开始分析", type="primary", use_container_width=True)
 
 with center_col:
     with st.container(border=True, height=WORKSPACE_PANEL_HEIGHT):
