@@ -2,6 +2,7 @@
 """CompEye Agent Streamlit demo."""
 
 import time
+from html import escape
 
 import streamlit as st
 
@@ -11,7 +12,7 @@ from runner import run_analysis
 
 
 st.set_page_config(
-    page_title="CompEye Agent",
+    page_title="CompEye Agent Demo",
     page_icon="CE",
     layout="wide",
     initial_sidebar_state="collapsed",
@@ -27,242 +28,257 @@ DIMENSION_PRESETS = {
 }
 
 STAGES = [
-    ("collect", "Collect", "采集公开资料"),
-    ("analyze", "Analyze", "生成结构化结论"),
-    ("write", "Write", "撰写 Markdown 报告"),
-    ("verify", "Verify", "独立校验证据"),
-    ("rewrite", "Rewrite", "必要时重写"),
-    ("final", "Done", "输出结果"),
+    ("collect", "Collect", "公开资料采集", "为每个竞品和指标寻找公开证据"),
+    ("analyze", "Analyze", "结构化分析", "把证据整理为 SWOT / 对比结论"),
+    ("write", "Write", "报告撰写", "生成可读 Markdown 竞品报告"),
+    ("verify", "Verify", "独立质检", "校验幻觉、矛盾、缺失来源"),
+    ("rewrite", "Rewrite", "自动修复", "按质检意见最小重写一次"),
+    ("final", "Done", "产物交付", "输出报告、质检 JSON 和输入 brief"),
 ]
 
 SAMPLES = {
-    "飞书 vs 钉钉": {
+    "协同办公": {
         "product_name": "飞书",
         "competitors": "钉钉, 企业微信",
-        "dimensions": ["定价", "功能"],
-        "custom_indicators": "免费套餐, 视频会议, 文档协作",
+        "dimensions": ["定价", "功能", "用户体验"],
+        "custom_indicators": "免费套餐, 文档协作, 视频会议, AI 助手",
         "analysis_type": "SWOT",
     },
-    "豆包 vs Kimi": {
+    "AI 助手": {
         "product_name": "豆包",
         "competitors": "Kimi, 通义千问",
-        "dimensions": ["功能", "用户体验"],
-        "custom_indicators": "长文本, 多模态, 搜索能力",
-        "analysis_type": "SWOT",
+        "dimensions": ["功能", "用户体验", "市场策略"],
+        "custom_indicators": "长文本, 多模态, 搜索能力, 移动端体验",
+        "analysis_type": "综合报告",
     },
-    "Notion AI vs 飞书妙记": {
+    "知识工具": {
         "product_name": "Notion AI",
         "competitors": "飞书妙记, 腾讯文档智能助手",
-        "dimensions": ["功能", "定价", "用户体验"],
-        "custom_indicators": "AI 摘要, 协作工作流, 付费策略",
-        "analysis_type": "综合报告",
+        "dimensions": ["定价", "功能", "性能"],
+        "custom_indicators": "AI 摘要, 协作工作流, 导出能力, 响应速度",
+        "analysis_type": "对比表格",
     },
 }
 
-DEFAULTS = SAMPLES["飞书 vs 钉钉"]
+DEFAULTS = SAMPLES["协同办公"]
 
 
 def inject_styles() -> None:
     st.markdown(
         """
         <style>
-        @import url('https://fonts.googleapis.com/css2?family=Google+Sans:wght@400;500;700&family=Noto+Sans+SC:wght@400;500;700&display=swap');
-
         :root {
-            --bg: #f8fafd;
-            --surface: #ffffff;
-            --surface-2: #f1f4f9;
-            --line: #dfe4ee;
-            --text: #1f1f1f;
-            --muted: #5f6368;
-            --blue: #1a73e8;
-            --blue-soft: #e8f0fe;
-            --green: #137333;
-            --red: #b3261e;
-            --chip: #edf2fa;
-            --shadow: 0 1px 2px rgba(60, 64, 67, .18), 0 1px 3px rgba(60, 64, 67, .12);
+            --bg: #eef3f8;
+            --ink: #172033;
+            --muted: #667085;
+            --soft: #f8fafc;
+            --panel: rgba(255, 255, 255, .86);
+            --line: rgba(119, 130, 153, .22);
+            --blue: #2563eb;
+            --blue-2: #88b7ff;
+            --mint: #20b486;
+            --rose: #ef6f8f;
+            --amber: #f59e0b;
+            --violet: #8b5cf6;
+            --shadow: 0 18px 50px rgba(38, 52, 83, .12);
         }
 
         .stApp {
-            background: var(--bg);
-            color: var(--text);
-            font-family: "Google Sans", "Noto Sans SC", sans-serif;
+            background:
+                radial-gradient(circle at 18% 8%, rgba(136, 183, 255, .24), transparent 30%),
+                linear-gradient(180deg, #f6f8fb 0%, var(--bg) 46%, #f8fafc 100%);
+            color: var(--ink);
         }
 
         [data-testid="stHeader"] {
-            background: rgba(248, 250, 253, .92);
-            border-bottom: 1px solid var(--line);
+            display: none !important;
+        }
+
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        .stDeployButton,
+        #MainMenu,
+        footer {
+            display: none !important;
         }
 
         .block-container {
-            max-width: 1440px;
-            padding: 1.1rem 1.4rem 2rem;
+            max-width: 1480px;
+            padding: .55rem 1.2rem .8rem;
         }
 
-        .topbar {
+        .demo-topbar,
+        .panel,
+        .composer,
+        .sample-card,
+        .metric-card {
+            border: 1px solid var(--line);
+            background: var(--panel);
+            box-shadow: var(--shadow);
+            backdrop-filter: blur(22px);
+        }
+
+        .demo-topbar {
+            min-height: 58px;
             display: flex;
             align-items: center;
             justify-content: space-between;
+            padding: 0 18px;
+            border-radius: 20px;
             margin-bottom: 14px;
         }
 
         .brand {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 12px;
         }
 
-        .logo {
-            width: 34px;
-            height: 34px;
-            border-radius: 10px;
+        .brand-mark {
+            width: 38px;
+            height: 38px;
+            border-radius: 12px;
             display: grid;
             place-items: center;
-            background: linear-gradient(135deg, #1a73e8, #5e97f6);
             color: #fff;
-            font-weight: 700;
-            letter-spacing: 0;
+            font-weight: 800;
+            background: linear-gradient(135deg, #172033 0%, #2563eb 62%, #20b486 100%);
         }
 
         .brand-title {
             font-size: 18px;
-            font-weight: 700;
-            line-height: 1.1;
+            font-weight: 800;
+            letter-spacing: 0;
         }
 
         .brand-subtitle {
             color: var(--muted);
             font-size: 12px;
-            margin-top: 1px;
+            margin-top: 2px;
         }
 
         .top-actions {
             display: flex;
+            flex-wrap: wrap;
+            justify-content: flex-end;
             gap: 8px;
-            align-items: center;
         }
 
         .pill {
             display: inline-flex;
             align-items: center;
-            gap: 6px;
+            gap: 7px;
             border: 1px solid var(--line);
-            background: var(--surface);
+            background: rgba(255, 255, 255, .72);
             color: var(--muted);
             border-radius: 999px;
-            padding: 7px 11px;
+            padding: 7px 12px;
             font-size: 12px;
-            box-shadow: var(--shadow);
+            font-weight: 650;
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 999px;
+            background: var(--mint);
+            box-shadow: 0 0 0 5px rgba(32, 180, 134, .12);
         }
 
         .panel {
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-radius: 18px;
-            box-shadow: var(--shadow);
-        }
-
-        .panel-pad {
+            border-radius: 22px;
             padding: 16px;
         }
 
-        .left-nav {
-            position: sticky;
-            top: 76px;
+        .panel-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 12px;
         }
 
-        .nav-heading {
+        .panel-title b {
+            font-size: 15px;
+        }
+
+        .panel-title span,
+        .muted {
             color: var(--muted);
             font-size: 12px;
-            font-weight: 700;
-            letter-spacing: .02em;
-            margin: 4px 0 10px;
         }
 
         .sample-card {
-            border: 1px solid transparent;
-            border-radius: 14px;
-            background: var(--surface-2);
-            padding: 12px;
+            border-radius: 18px;
+            box-shadow: none;
+            padding: 13px;
             margin-bottom: 10px;
+            background: rgba(248, 250, 252, .9);
         }
 
         .sample-card strong {
             display: block;
-            font-size: 13px;
-            margin-bottom: 4px;
+            margin-bottom: 5px;
+            font-size: 14px;
         }
 
         .sample-card span {
             color: var(--muted);
-            display: block;
             font-size: 12px;
-            line-height: 1.45;
+            line-height: 1.48;
         }
 
-        .prompt-card {
-            padding: 18px;
-            min-height: 328px;
+        .composer {
+            border-radius: 26px;
+            padding: 0;
+            margin-bottom: 0;
         }
 
-        .prompt-title {
+        .composer h2 {
+            margin: 0 0 2px;
             font-size: 24px;
-            font-weight: 700;
             letter-spacing: 0;
-            margin: 0 0 6px;
         }
 
-        .prompt-caption {
+        .composer-caption {
             color: var(--muted);
-            font-size: 13px;
-            margin-bottom: 16px;
-        }
-
-        .section-label {
-            font-size: 13px;
-            color: var(--muted);
-            font-weight: 700;
-            margin: 0 0 10px;
-        }
-
-        .run-settings {
-            position: sticky;
-            top: 76px;
+            font-size: 12px;
+            margin-bottom: 8px;
         }
 
         .stage-list {
             display: grid;
-            gap: 8px;
-            margin-top: 8px;
+            gap: 7px;
         }
 
         .stage-row {
             display: grid;
-            grid-template-columns: 26px 1fr;
-            gap: 10px;
+            grid-template-columns: 28px 1fr;
+            gap: 9px;
             align-items: center;
-            padding: 9px;
-            border-radius: 13px;
-            background: transparent;
+            padding: 8px;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, .5);
             border: 1px solid transparent;
         }
 
         .stage-dot {
-            width: 24px;
-            height: 24px;
+            width: 26px;
+            height: 26px;
             border-radius: 50%;
             display: grid;
             place-items: center;
             border: 1px solid var(--line);
             color: var(--muted);
             font-size: 11px;
-            font-weight: 700;
+            font-weight: 800;
             background: #fff;
         }
 
         .stage-row.active {
-            background: var(--blue-soft);
-            border-color: #c6dafc;
+            background: rgba(37, 99, 235, .1);
+            border-color: rgba(37, 99, 235, .25);
         }
 
         .stage-row.active .stage-dot {
@@ -272,39 +288,46 @@ def inject_styles() -> None:
         }
 
         .stage-row.done .stage-dot {
-            background: #e6f4ea;
-            border-color: #ceead6;
-            color: var(--green);
+            background: rgba(32, 180, 134, .13);
+            border-color: rgba(32, 180, 134, .22);
+            color: #08765b;
         }
 
         .stage-row b {
             display: block;
-            font-size: 13px;
+            font-size: 12px;
         }
 
         .stage-row small {
-            display: block;
             color: var(--muted);
-            font-size: 11px;
-            margin-top: 1px;
+            display: block;
+            font-size: 10px;
+            margin-top: 2px;
         }
 
-        .result-shell {
-            margin-top: 16px;
+        .phase-tag {
+            display: inline-block;
+            margin-top: 10px;
+            color: #0f766e;
+            background: rgba(32, 180, 134, .12);
+            border-radius: 999px;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 750;
         }
 
         .metric-strip {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, minmax(0, 1fr));
             gap: 10px;
-            margin: 14px 0;
+            margin: 10px 0 14px;
         }
 
         .metric-card {
-            border: 1px solid var(--line);
             border-radius: 16px;
-            background: var(--surface);
+            box-shadow: none;
             padding: 13px 14px;
+            background: rgba(255, 255, 255, .75);
         }
 
         .metric-card span {
@@ -315,43 +338,97 @@ def inject_styles() -> None:
 
         .metric-card b {
             display: block;
-            font-size: 22px;
-            margin-top: 5px;
+            font-size: 20px;
+            margin-top: 4px;
+        }
+
+        .summary-box {
+            min-height: 0;
+        }
+
+        .summary-empty {
+            min-height: 74px;
+            display: grid;
+            place-items: center;
+            text-align: center;
+            color: var(--muted);
+            border: 1px dashed var(--line);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, .42);
+            padding: 12px;
+            font-size: 12px;
+        }
+
+        .brief-line {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            border-bottom: 1px solid var(--line);
+            padding: 8px 0;
+            font-size: 12px;
+        }
+
+        .brief-line span {
+            color: var(--muted);
+        }
+
+        .report-page {
+            max-width: 1040px;
+            margin: 0 auto;
         }
 
         .stButton > button {
             border-radius: 999px;
-            min-height: 38px;
-            font-weight: 600;
+            min-height: 36px;
+            font-weight: 750;
             border: 1px solid var(--line);
+            box-shadow: none;
         }
 
         .stButton > button[kind="primary"] {
-            background: var(--blue);
-            border-color: var(--blue);
+            background: #172033;
+            border-color: #172033;
             color: #fff;
         }
 
         div[data-testid="stTextInput"] input,
         div[data-testid="stTextArea"] textarea {
-            border-radius: 14px;
+            border-radius: 16px;
             border-color: var(--line);
-            background: #fff;
+            background: rgba(255, 255, 255, .88);
+        }
+
+        div[data-testid="stTextInput"],
+        div[data-testid="stTextArea"],
+        div[data-testid="stMultiSelect"],
+        div[data-testid="stSelectbox"] {
+            margin-bottom: .2rem;
         }
 
         div[data-testid="stMultiSelect"] div,
         div[data-testid="stSelectbox"] div {
-            border-radius: 14px;
+            border-radius: 16px;
         }
 
         [data-testid="stTabs"] button {
-            font-weight: 600;
+            font-weight: 750;
         }
 
         @media (max-width: 1100px) {
-            .left-nav,
-            .run-settings {
-                position: static;
+            .metric-strip {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 760px) {
+            .demo-topbar {
+                align-items: flex-start;
+                flex-direction: column;
+                padding: 14px;
+            }
+
+            .metric-strip {
+                grid-template-columns: 1fr;
             }
         }
         </style>
@@ -387,111 +464,182 @@ def build_inputs() -> dict:
 def render_stage_board(active_stage: str | None = None, done: set[str] | None = None) -> None:
     done = done or set()
     html = ['<div class="stage-list">']
-    for index, (key, title, caption) in enumerate(STAGES, 1):
+    for index, (key, title, caption, detail) in enumerate(STAGES, 1):
         state = "active" if key == active_stage else "done" if key in done else ""
         mark = "✓" if key in done else str(index)
         html.append(
             f'<div class="stage-row {state}"><div class="stage-dot">{mark}</div>'
-            f'<div><b>{title}</b><small>{caption}</small></div></div>'
+            f"<div><b>{escape(title)} · {escape(caption)}</b>"
+            f"<small>{escape(detail)}</small></div></div>"
         )
     html.append("</div>")
     st.markdown("".join(html), unsafe_allow_html=True)
 
 
 def render_metric(label: str, value: str) -> str:
-    return f'<div class="metric-card"><span>{label}</span><b>{value}</b></div>'
+    return f"<div class='metric-card'><span>{escape(label)}</span><b>{escape(value)}</b></div>"
 
 
 def initialize_state() -> None:
     for key, value in DEFAULTS.items():
         st.session_state.setdefault(key, value)
+    st.session_state.setdefault("latest_result", None)
+    st.session_state.setdefault("latest_brief", None)
+
+
+def render_topbar() -> None:
+    st.markdown(
+        """
+        <div class="demo-topbar">
+          <div class="brand">
+            <div class="brand-mark">CE</div>
+            <div>
+              <div class="brand-title">CompEye Agent</div>
+              <div class="brand-subtitle">Evidence-first multi-agent competitor analysis demo</div>
+            </div>
+          </div>
+          <div class="top-actions">
+            <span class="pill"><span class="live-dot"></span> Live Demo</span>
+            <span class="pill">MiMo V2.5 / Pro</span>
+            <span class="pill">CrewAI Phase 1</span>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def report_view_requested() -> bool:
+    return st.query_params.get("view") == "report"
+
+
+def report_page_url() -> str:
+    return "?view=report"
+
+
+def render_report_page() -> None:
+    st.markdown('<main class="report-page">', unsafe_allow_html=True)
+    if st.button("返回工作台", use_container_width=False):
+        st.query_params.clear()
+        st.rerun()
+
+    st.markdown('<section class="panel">', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="panel-title"><b>完整竞品分析报告</b><span>Report Detail</span></div>',
+        unsafe_allow_html=True,
+    )
+    result = st.session_state.get("latest_result")
+    brief = st.session_state.get("latest_brief")
+    if result is None:
+        st.info("当前还没有生成报告。请返回工作台先运行一次分析。")
+    else:
+        report_tab, verify_tab, brief_tab = st.tabs(["完整报告", "Verifier JSON", "Input Brief"])
+        with report_tab:
+            st.markdown(result.report)
+        with verify_tab:
+            st.code(result.verifier_result, language="json")
+        with brief_tab:
+            st.json(brief or {})
+    st.markdown("</section></main>", unsafe_allow_html=True)
+
+
+def render_summary_placeholder() -> None:
+    st.markdown(
+        """
+        <div class="summary-empty">
+          <div>
+            <b>报告总结会显示在这里</b><br>
+            运行分析后，这里只展示验证状态、重写状态、报告长度和简短预览。完整报告通过按钮进入新页面查看。
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_brief_summary(inputs: dict) -> None:
+    dimensions = "、".join(item["name"] for item in inputs["dimensions"]) or "-"
+    competitors = "、".join(inputs["competitors"]) or "-"
+    st.markdown(
+        f"""
+        <div class="brief-line"><span>目标产品</span><b>{escape(inputs["productName"] or "-")}</b></div>
+        <div class="brief-line"><span>竞品</span><b>{escape(competitors)}</b></div>
+        <div class="brief-line"><span>维度</span><b>{escape(dimensions)}</b></div>
+        <div class="brief-line"><span>输出形式</span><b>{escape(inputs["analysisType"])}</b></div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 initialize_state()
 inject_styles()
+if report_view_requested():
+    render_report_page()
+    st.stop()
 
-st.markdown(
-    """
-    <div class="topbar">
-      <div class="brand">
-        <div class="logo">CE</div>
-        <div>
-          <div class="brand-title">CompEye Agent</div>
-          <div class="brand-subtitle">Multi-agent competitor analysis workspace</div>
-        </div>
-      </div>
-      <div class="top-actions">
-        <span class="pill">MiMo V2.5 + Pro</span>
-        <span class="pill">Evidence-first report</span>
-      </div>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
-
-left_col, center_col, right_col = st.columns([0.8, 1.75, 1.0], gap="medium")
+left_col, center_col, right_col = st.columns([1.1, 1.35, 1.05], gap="medium")
 
 with left_col:
-    st.markdown('<section class="panel panel-pad left-nav">', unsafe_allow_html=True)
-    st.markdown('<div class="nav-heading">Examples</div>', unsafe_allow_html=True)
-    for sample_name, sample in SAMPLES.items():
-        st.markdown(
-            f"""
-            <div class="sample-card">
-              <strong>{sample_name}</strong>
-              <span>{sample["custom_indicators"]}</span>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if st.button(f"Use {sample_name}", key=f"sample_{sample_name}", use_container_width=True):
-            apply_sample(sample_name)
-            st.rerun()
+    with st.container(border=True):
+        st.markdown("## 配置分析")
+        st.caption("填写目标产品、竞品和分析维度。模板改为紧凑按钮。")
 
-    st.markdown('<div class="nav-heading" style="margin-top:16px;">Demo notes</div>', unsafe_allow_html=True)
-    st.caption("快速演示模式会缩短等待时间；严格模式会在质检失败时自动重写一次。")
-    st.caption("Verifier 不继承 Writer 历史，会主动寻找幻觉、矛盾和缺失证据。")
-    st.markdown("</section>", unsafe_allow_html=True)
+        template_cols = st.columns(3, gap="small")
+        for index, sample_name in enumerate(SAMPLES):
+            with template_cols[index]:
+                if st.button(sample_name, key=f"sample_{sample_name}", use_container_width=True):
+                    apply_sample(sample_name)
+                    st.rerun()
+
+        st.text_input("目标产品", key="product_name")
+        st.text_input("竞品", key="competitors", help="用逗号分隔多个竞品。")
+        st.multiselect("分析维度", options=list(DIMENSION_PRESETS.keys()), key="dimensions")
+        st.text_area("重点指标", key="custom_indicators", height=82)
+        st.selectbox("输出形式", ["SWOT", "对比表格", "综合报告"], key="analysis_type")
+        run_button = st.button("开始分析", type="primary", use_container_width=True)
 
 with center_col:
-    st.markdown('<section class="panel prompt-card">', unsafe_allow_html=True)
-    st.markdown('<div class="prompt-title">Create an analysis run</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="prompt-caption">Configure the business question like a prompt, then run the agent crew.</div>',
-        unsafe_allow_html=True,
-    )
-
-    a, b = st.columns([1, 1], gap="small")
-    with a:
-        st.text_input("Target product", key="product_name")
-    with b:
-        st.text_input("Competitors", key="competitors", help="Use commas to separate competitors.")
-
-    st.multiselect("Analysis dimensions", options=list(DIMENSION_PRESETS.keys()), key="dimensions")
-    st.text_area("Focus indicators", key="custom_indicators", height=96)
-    st.selectbox("Output format", ["SWOT", "对比表格", "综合报告"], key="analysis_type")
-
-    run_button = st.button("Run analysis", type="primary", use_container_width=True)
-    st.markdown("</section>", unsafe_allow_html=True)
-
-    result_container = st.container()
+    with st.container(border=True):
+        st.markdown("### 报告总结")
+        st.caption("完整报告通过按钮进入独立页面查看。")
+        result_container = st.container()
+        with result_container:
+            latest_result = st.session_state.get("latest_result")
+            latest_brief = st.session_state.get("latest_brief")
+            if latest_result is None:
+                st.markdown("**当前 Brief**")
+                render_brief_summary(build_inputs())
+                render_summary_placeholder()
+            else:
+                status_text = "Passed" if latest_result.passed else "Needs review"
+                retry_text = "Yes" if latest_result.retried else "No"
+                report_size = f"{len(latest_result.report)} chars"
+                st.markdown(
+                    "<div class='metric-strip'>"
+                    + render_metric("Verifier", status_text)
+                    + render_metric("Rewrite", retry_text)
+                    + render_metric("Report", report_size)
+                    + render_metric("Output", (latest_brief or {}).get("analysisType", "-"))
+                    + "</div>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown("**报告预览**")
+                st.markdown(latest_result.report[:520] + ("..." if len(latest_result.report) > 520 else ""))
+                st.link_button("查看完整报告", report_page_url(), use_container_width=True)
 
 with right_col:
-    st.markdown('<section class="panel panel-pad run-settings">', unsafe_allow_html=True)
-    st.markdown('<div class="section-label">Run settings</div>', unsafe_allow_html=True)
-    quick_mode = st.toggle("Fast demo mode", value=True, help="Skip the automatic rewrite pass.")
-    show_brief = st.toggle("Show generated brief", value=True)
-    inputs = build_inputs()
-    if show_brief:
-        st.json(inputs, expanded=False)
-
-    st.markdown('<div class="section-label" style="margin-top:16px;">Agent status</div>', unsafe_allow_html=True)
-    stage_slot = st.empty()
-    status_slot = st.empty()
-    progress_slot = st.empty()
-    with stage_slot:
-        render_stage_board()
-    st.markdown("</section>", unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown("### Agent 执行追踪")
+        quick_mode = st.toggle("快速演示模式", value=True, help="关闭后启用失败自动重写一次。")
+        show_brief = st.toggle("显示结构化 brief", value=False)
+        stage_slot = st.empty()
+        status_slot = st.empty()
+        progress_slot = st.empty()
+        with stage_slot:
+            render_stage_board()
+        if show_brief:
+            st.markdown("**Brief JSON**")
+            st.json(build_inputs(), expanded=False)
 
 if run_button:
     try:
@@ -500,11 +648,11 @@ if run_button:
         st.error(f"输入不完整或不合法：{exc}")
         st.stop()
 
-    stage_order = {key: idx for idx, (key, _, _) in enumerate(STAGES)}
+    stage_order = {key: idx for idx, (key, _, _, _) in enumerate(STAGES)}
     done_stages: set[str] = set()
 
     def update_progress(stage: str, message: str) -> None:
-        for key, _, _ in STAGES:
+        for key, _, _, _ in STAGES:
             if stage_order[key] < stage_order.get(stage, 0):
                 done_stages.add(key)
         with stage_slot:
@@ -514,11 +662,11 @@ if run_button:
             min((stage_order.get(stage, 0) + 1) / len(STAGES), 0.96),
             text=message,
         )
-        time.sleep(0.15)
+        time.sleep(0.12)
 
     with result_container:
-        with st.spinner("Running agent crew..."):
-            update_progress("collect", "Collector is gathering public evidence")
+        with st.spinner("Agent crew is working..."):
+            update_progress("collect", "Collector 正在采集公开证据")
             result = run_analysis(
                 validated,
                 allow_retry=not quick_mode,
@@ -526,19 +674,21 @@ if run_button:
             )
 
         with stage_slot:
-            render_stage_board(done={key for key, _, _ in STAGES})
+            render_stage_board(done={key for key, _, _, _ in STAGES})
         status_slot.success("Run complete")
         progress_slot.progress(1.0, text="Run complete")
+        st.session_state.latest_result = result
+        st.session_state.latest_brief = validated
 
-        st.markdown('<div class="result-shell">', unsafe_allow_html=True)
         status_text = "Passed" if result.passed else "Needs review"
         retry_text = "Yes" if result.retried else "No"
-        mode_text = "Fast" if quick_mode else "Strict"
+        report_size = f"{len(result.report)} chars"
         st.markdown(
-            '<div class="metric-strip">'
+            "<div class='metric-strip'>"
             + render_metric("Verifier", status_text)
-            + render_metric("Rewrite pass", retry_text)
-            + render_metric("Mode", mode_text)
+            + render_metric("Rewrite", retry_text)
+            + render_metric("Report", report_size)
+            + render_metric("Output", validated["analysisType"])
             + "</div>",
             unsafe_allow_html=True,
         )
@@ -548,11 +698,6 @@ if run_button:
         else:
             st.warning("Report generated. Verifier found evidence or reasoning issues for review.")
 
-        report_tab, verify_tab, brief_tab = st.tabs(["Report", "Verifier JSON", "Brief"])
-        with report_tab:
-            st.markdown(result.report)
-        with verify_tab:
-            st.code(result.verifier_result, language="json")
-        with brief_tab:
-            st.json(validated)
-        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown("**报告预览**")
+        st.markdown(result.report[:900] + ("..." if len(result.report) > 900 else ""))
+        st.link_button("查看完整报告", report_page_url(), use_container_width=True)
