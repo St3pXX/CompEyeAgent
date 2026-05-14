@@ -249,6 +249,8 @@ CompEyeAgent/
 
 完整的架构设计、12 项优化详细说明、分阶段路线图见 [docs/DESIGN.md](docs/DESIGN.md)。
 
+Phase 1.5 在线产品 Demo 的详细执行计划和当前进度见 [docs/PHASE_1_5_PLAN.md](docs/PHASE_1_5_PLAN.md)。
+
 ---
 
 ## 🛠️ 环境变量

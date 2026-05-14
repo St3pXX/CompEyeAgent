@@ -1,10 +1,10 @@
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional
+from typing import Any, List, Literal, Optional
 
 
 class Dimension(BaseModel):
-    name: Literal["定价", "功能", "用户体验", "市场策略", "性能"]
-    indicators: List[str]
+    name: str = Field(min_length=1)
+    indicators: List[str] = Field(default_factory=list)
 
 
 class CompetitorInput(BaseModel):
@@ -52,3 +52,76 @@ class ReportArtifact(BaseModel):
     markdown: str
     claims: List[Claim] = Field(default_factory=list)
     verification_issues: List[VerificationIssue] = Field(default_factory=list)
+
+
+RunStatus = Literal["queued", "running", "passed", "needs_review", "failed", "cancelled"]
+EventType = Literal[
+    "run.created",
+    "run.started",
+    "agent.started",
+    "agent.progress",
+    "agent.completed",
+    "verifier.issue",
+    "artifact.ready",
+    "run.completed",
+    "run.failed",
+    "run.cancelled",
+]
+ArtifactKind = Literal["report_markdown", "verifier_json", "brief_json", "provenance_index"]
+
+
+class RunRecord(BaseModel):
+    run_id: str
+    input: CompetitorInput
+    status: RunStatus
+    created_at: str
+    updated_at: str
+    completed_at: Optional[str] = None
+    error: Optional[str] = None
+    parent_run_id: Optional[str] = None
+
+
+class AgentEvent(BaseModel):
+    event_id: int
+    run_id: str
+    type: EventType
+    agent: Optional[str] = None
+    stage: Optional[str] = None
+    message: str
+    payload: dict[str, Any] = Field(default_factory=dict)
+    created_at: str
+
+
+class ArtifactRecord(BaseModel):
+    artifact_id: str
+    run_id: str
+    kind: ArtifactKind
+    content: str
+    content_preview: str
+    created_at: str
+
+
+class SourceRecord(BaseModel):
+    source_id: str
+    run_id: str
+    conclusion_id: Optional[str] = None
+    uri: str
+    snippet: str = ""
+    confidence: Literal["high", "medium", "low"] = "medium"
+    retrieved_at: Optional[str] = None
+
+
+class CreateRunRequest(BaseModel):
+    input: CompetitorInput
+    allow_retry: bool = True
+
+
+class CreateRunResponse(BaseModel):
+    run: RunRecord
+
+
+class RunDetailResponse(BaseModel):
+    run: RunRecord
+    events: List[AgentEvent] = Field(default_factory=list)
+    artifacts: List[ArtifactRecord] = Field(default_factory=list)
+    sources: List[SourceRecord] = Field(default_factory=list)

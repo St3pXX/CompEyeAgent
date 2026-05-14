@@ -45,3 +45,6 @@ ENV/
 
 # Local demo runtime logs
 streamlit*.log
+
+# Local Phase 1.5 run store
+data/
