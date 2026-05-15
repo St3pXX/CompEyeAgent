@@ -125,8 +125,8 @@ provenance_index
 | 11 | Dashboard 页面 | 已完成 | 已接 `GET /api/runs/{run_id}` 和 `/sse/runs/{run_id}`，可用真实事件更新 Agent 状态、时间线和报告入口 |
 | 12 | Report 页面 | 已完成 | 已接真实 artifacts / sources，展示 Markdown 报告、Verifier JSON、Input Brief、来源索引并支持下载 |
 | 13 | 前后端同服务部署 | 已完成 | FastAPI 已托管 `frontend/dist` 静态资源，并支持 React 路由刷新回退到 `index.html` |
-| 14 | 云端部署 | 待开始 | 配置环境变量、运行数据目录和启动命令 |
-| 15 | README / DESIGN 同步 | 待开始 | 更新在线体验、启动方式和 Phase 1.5 进度 |
+| 14 | 云端部署 | 已完成 | 已新增 `docs/DEPLOYMENT.md`，明确环境变量、构建命令、启动命令、`RUN_STORE_PATH` 持久化要求和平台配置示例 |
+| 15 | README / DESIGN 同步 | 已完成 | README 已链接部署文档并更新 Phase 1.5 状态，`.env.example` 已补充部署相关变量 |
 
 ## 6. 当前代码落点
 
@@ -166,6 +166,8 @@ requirements.txt           FastAPI / Uvicorn 依赖
 - 前端 build 可由 FastAPI 同服务托管
 - 云端环境变量可配置
 - `data/` 运行目录可持久化或挂载
+
+详细部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
 ## 8. 后续工程约束
 

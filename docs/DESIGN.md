@@ -589,6 +589,7 @@ permissions = {
 
 **部署建议**
 - Phase 1.5 在线部署：FastAPI + React 静态资源同服务部署，SQLite/JSON 本地持久化；可选 Render / Railway / Fly.io / 云服务器
+- Phase 1.5 具体环境变量、构建命令、启动命令和 `RUN_STORE_PATH` 持久化要求见 [DEPLOYMENT.md](DEPLOYMENT.md)
 - 开发测试：Docker Compose（Python + Redis + MinIO）
 - 生产环境：K8s + PostgreSQL / Redis / 对象存储 + Prometheus stack
 
