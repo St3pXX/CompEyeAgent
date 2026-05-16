@@ -638,6 +638,35 @@ def report_view_requested() -> bool:
     return st.query_params.get("view") == "report"
 
 
+def inject_report_scroll_styles() -> None:
+    st.markdown(
+        """
+        <style>
+        html,
+        body,
+        [data-testid="stAppViewContainer"],
+        .stApp,
+        .block-container {
+            height: auto !important;
+            min-height: 100vh !important;
+            max-height: none !important;
+            overflow: auto !important;
+        }
+
+        .block-container {
+            padding-bottom: 3rem !important;
+        }
+
+        .report-page {
+            max-height: none !important;
+            overflow: visible !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_report_button(key: str) -> None:
     if st.button("查看完整报告", key=key, use_container_width=True):
         st.query_params["view"] = "report"
@@ -645,6 +674,7 @@ def render_report_button(key: str) -> None:
 
 
 def render_report_page() -> None:
+    inject_report_scroll_styles()
     st.markdown('<main class="report-page">', unsafe_allow_html=True)
     if st.button("返回工作台", use_container_width=False):
         st.query_params.clear()
