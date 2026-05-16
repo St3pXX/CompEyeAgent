@@ -169,6 +169,46 @@ requirements.txt           FastAPI / Uvicorn 依赖
 
 详细部署步骤见 [DEPLOYMENT.md](DEPLOYMENT.md)。
 
+### 真实 E2E 验证记录
+
+验证时间：2026-05-16
+
+验证输入：
+
+```json
+{
+  "productName": "飞书",
+  "competitors": ["钉钉"],
+  "dimensions": [
+    {"name": "定价", "indicators": ["免费套餐"]}
+  ],
+  "analysisType": "SWOT"
+}
+```
+
+验证结果：
+
+```text
+run_id=273d20e1-a0d7-455a-ad39-91e336bb26fc
+status=needs_review
+events=6
+artifacts=4
+sources=1
+```
+
+已验证链路：
+
+- `npm test`、`npm run build` 通过
+- `py -3.12 -m unittest discover -s tests` 通过
+- `/health` 返回正常
+- `/demo` 与 `/reports/{run_id}` 由 FastAPI 同服务返回 React 应用
+- `POST /api/runs` 可创建真实 CrewAI 分析任务
+- `GET /api/runs/{run_id}` 可查询 run、events、artifacts、sources
+- `/sse/runs/{run_id}` 可返回完整事件流，并以 `stream.closed` 结束
+- `RUN_STORE_PATH` 指向同一个 SQLite 文件时，服务重启后仍能查到历史 run
+
+说明：本次真实运行的终态为 `needs_review`，原因是 Verifier 判断报告来源只给到钉钉官网首页，证据粒度不足。这属于业务质检结果，不是系统链路失败。
+
 ## 8. 后续工程约束
 
 - 前端页面结构按最终信息架构一次设计，Phase 2 只补数据，不重做 Dashboard。
