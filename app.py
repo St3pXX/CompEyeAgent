@@ -52,6 +52,9 @@ DEFAULTS = {
     "custom_indicators": "",
     "analysis_type": "SWOT",
 }
+WORKSPACE_PANEL_HEIGHT = 760
+
+
 def inject_styles() -> None:
     st.markdown(
         """
@@ -128,10 +131,6 @@ def inject_styles() -> None:
 
         [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] > div {
             overflow: auto !important;
-        }
-
-        [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stVerticalBlock"] {
-            min-height: calc(100vh - 4rem) !important;
         }
 
         [data-testid="stVerticalBlock"] {
@@ -708,7 +707,7 @@ if report_view_requested():
 left_col, center_col, right_col = st.columns([1.1, 1.35, 1.05], gap="medium")
 
 with left_col:
-    with st.container(border=True):
+    with st.container(border=True, height=WORKSPACE_PANEL_HEIGHT):
         st.markdown("## 配置分析")
         st.caption("填写任意目标产品、竞品和分析维度。")
         run_button = st.button("开始分析", type="primary", use_container_width=True)
@@ -734,7 +733,7 @@ with left_col:
         st.selectbox("输出形式", ["SWOT", "对比表格", "综合报告"], key="analysis_type")
 
 with center_col:
-    with st.container(border=True):
+    with st.container(border=True, height=WORKSPACE_PANEL_HEIGHT):
         st.markdown("### 报告总结")
         st.caption("完整报告通过按钮进入独立页面查看。")
         result_container = st.container()
@@ -764,7 +763,7 @@ with center_col:
                 render_report_button("open_report_from_summary")
 
 with right_col:
-    with st.container(border=True):
+    with st.container(border=True, height=WORKSPACE_PANEL_HEIGHT):
         st.markdown("### Agent 执行追踪")
         quick_mode = st.toggle("快速演示模式", value=True, help="关闭后启用失败自动重写一次。")
         show_brief = st.toggle("显示结构化 brief", value=False)
