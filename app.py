@@ -269,6 +269,10 @@ def inject_styles() -> None:
             font-size: 12px;
         }
 
+        .report-title {
+            margin-bottom: 6px;
+        }
+
         .sample-card {
             border-radius: 18px;
             box-shadow: none;
@@ -675,29 +679,29 @@ def render_report_button(key: str) -> None:
 
 def render_report_page() -> None:
     inject_report_scroll_styles()
-    st.markdown('<main class="report-page">', unsafe_allow_html=True)
+    st.markdown('<div class="report-page">', unsafe_allow_html=True)
     if st.button("返回工作台", use_container_width=False):
         st.query_params.clear()
         st.rerun()
 
-    st.markdown('<section class="panel">', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="panel-title"><b>完整竞品分析报告</b><span>Report Detail</span></div>',
-        unsafe_allow_html=True,
-    )
-    result = st.session_state.get("latest_result")
-    brief = st.session_state.get("latest_brief")
-    if result is None:
-        st.info("当前还没有生成报告。请返回工作台先运行一次分析。")
-    else:
-        report_tab, verify_tab, brief_tab = st.tabs(["完整报告", "Verifier JSON", "Input Brief"])
-        with report_tab:
-            st.markdown(result.report)
-        with verify_tab:
-            st.code(result.verifier_result, language="json")
-        with brief_tab:
-            st.json(brief or {})
-    st.markdown("</section></main>", unsafe_allow_html=True)
+    with st.container(border=True):
+        st.markdown(
+            '<div class="panel-title report-title"><b>完整竞品分析报告</b><span>Report Detail</span></div>',
+            unsafe_allow_html=True,
+        )
+        result = st.session_state.get("latest_result")
+        brief = st.session_state.get("latest_brief")
+        if result is None:
+            st.info("当前还没有生成报告。请返回工作台先运行一次分析。")
+        else:
+            report_tab, verify_tab, brief_tab = st.tabs(["完整报告", "Verifier JSON", "Input Brief"])
+            with report_tab:
+                st.markdown(result.report)
+            with verify_tab:
+                st.code(result.verifier_result, language="json")
+            with brief_tab:
+                st.json(brief or {})
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 def render_summary_placeholder() -> None:
