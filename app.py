@@ -52,7 +52,7 @@ DEFAULTS = {
     "custom_indicators": "",
     "analysis_type": "SWOT",
 }
-WORKSPACE_PANEL_HEIGHT = 560
+WORKSPACE_PANEL_HEIGHT = 760
 
 
 def inject_styles() -> None:
@@ -87,6 +87,7 @@ def inject_styles() -> None:
         [data-testid="stAppViewContainer"],
         .stApp {
             height: 100vh;
+            width: 100vw;
             overflow: hidden;
         }
 
@@ -104,10 +105,32 @@ def inject_styles() -> None:
         }
 
         .block-container {
-            max-width: 1480px;
-            padding: .55rem 1.2rem .8rem;
-            max-height: 100vh;
+            max-width: none !important;
+            width: 100% !important;
+            padding: .9rem clamp(.75rem, 1.4vw, 1.6rem) 1rem !important;
+            height: 100vh;
             overflow: hidden;
+            box-sizing: border-box;
+        }
+
+        [data-testid="stHorizontalBlock"] {
+            align-items: stretch;
+            height: calc(100vh - 1.9rem);
+        }
+
+        [data-testid="column"] {
+            min-width: 0;
+        }
+
+        [data-testid="column"] > div,
+        [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"],
+        [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] > div {
+            height: 100% !important;
+            max-height: calc(100vh - 1.9rem) !important;
+        }
+
+        [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] > div {
+            overflow: auto !important;
         }
 
         [data-testid="stVerticalBlock"] {
@@ -487,6 +510,24 @@ def inject_styles() -> None:
         }
 
         @media (max-width: 760px) {
+            html,
+            body,
+            [data-testid="stAppViewContainer"],
+            .stApp,
+            .block-container {
+                height: auto;
+                min-height: 100vh;
+                overflow: auto;
+            }
+
+            [data-testid="stHorizontalBlock"],
+            [data-testid="column"] > div,
+            [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"],
+            [data-testid="column"] [data-testid="stVerticalBlockBorderWrapper"] > div {
+                height: auto !important;
+                max-height: none !important;
+            }
+
             .demo-topbar {
                 align-items: flex-start;
                 flex-direction: column;
