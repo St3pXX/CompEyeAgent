@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: compeye-agent
+    runtime: docker
+    plan: starter
+    healthCheckPath: /health
+    autoDeploy: true
+    disk:
+      name: compeye-data
+      mountPath: /app/data
+      sizeGB: 1
+    envVars:
+      - key: RUN_STORE_PATH
+        value: /app/data/run_store.sqlite3
+      - key: MIMO_BASE_URL
+        value: https://api.xiaomimimo.com/v1
+      - key: MIMO_API_KEY
+        sync: false
+      - key: COLLECTOR_MODEL
+        value: mimo-v2.5
+      - key: ANALYZER_MODEL
+        value: mimo-v2.5
+      - key: WRITER_MODEL
+        value: mimo-v2.5
+      - key: VERIFIER_MODEL
+        value: mimo-v2.5-pro
