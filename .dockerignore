@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.git/
+.venv/
+venv/
+env/
+.env
+.env.local
+.cache/
+data/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+uvicorn*.log
+streamlit*.log
