@@ -42,7 +42,7 @@ Phase 1.5 之后，前后端统一围绕四类对象展开：
 | Run | 一次竞品分析任务 | 已实现 |
 | Event | Agent 执行事件 | 已实现 |
 | Artifact | 报告、Brief、Verifier JSON、Provenance 等产物 | 已实现 |
-| Source | 来源证据 | 已建表和接口，内容提取待补充 |
+| Source | 来源证据 | 已实现建表、接口、报告 URL 提取和 provenance index 产物 |
 
 ## 3. API Contract
 

@@ -6,6 +6,7 @@ import json
 from typing import Any
 
 from models.schema import CompetitorInput, RunRecord
+from services.evidence_service import DEFAULT_EVIDENCE_INDEX, EvidenceService
 from storage.run_store import SQLiteRunStore
 from services.source_indexer import extract_source_references
 
@@ -21,8 +22,9 @@ STAGE_AGENT = {
 
 
 class RunService:
-    def __init__(self, store: SQLiteRunStore) -> None:
+    def __init__(self, store: SQLiteRunStore, evidence_service: EvidenceService | None = None) -> None:
         self.store = store
+        self.evidence_service = evidence_service
 
     def create_run(self, input_data: CompetitorInput, *, allow_retry: bool = True) -> RunRecord:
         run = self.store.create_run(input_data.model_dump())
@@ -37,6 +39,8 @@ class RunService:
 
     def execute_run(self, run_id: str, *, allow_retry: bool = True) -> None:
         run = self.store.get_run(run_id)
+        if run.status == "cancelled":
+            return
         self.store.update_run_status(run_id, "running")
         self.store.append_event(run_id, "run.started", "分析任务开始执行", agent="Coordinator")
 
@@ -52,8 +56,10 @@ class RunService:
         try:
             from runner import run_analysis
 
+            run_inputs = run.input.model_dump()
+            run_inputs.setdefault("evidenceIndex", self._evidence_index_for_input(run.input))
             result = run_analysis(
-                run.input.model_dump(),
+                run_inputs,
                 allow_retry=allow_retry,
                 progress_callback=progress_callback,
             )
@@ -113,3 +119,19 @@ class RunService:
     def empty_extension_payload(self, run_id: str, kind: str) -> dict[str, Any]:
         self.store.get_run(run_id)
         return {"run_id": run_id, "kind": kind, "items": []}
+
+    def _evidence_index_for_input(self, input_data: CompetitorInput) -> str:
+        if self.evidence_service is None:
+            return DEFAULT_EVIDENCE_INDEX
+
+        dimensions = [dimension.name for dimension in input_data.dimensions]
+        competitors = [input_data.productName, *input_data.competitors]
+        evidence = []
+        seen_ids: set[str] = set()
+        for competitor in competitors:
+            for item in self.evidence_service.query_evidence(competitor, dimensions):
+                if item.evidence_id in seen_ids:
+                    continue
+                seen_ids.add(item.evidence_id)
+                evidence.append(item)
+        return self.evidence_service.format_evidence_for_prompt(evidence)

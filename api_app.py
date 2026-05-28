@@ -15,12 +15,17 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from models.schema import CreateRunRequest, CreateRunResponse, RunDetailResponse
+from models.source_layer import SourceSeed
+from services.evidence_service import EvidenceService
 from services.run_service import RunService
 from storage.run_store import SQLiteRunStore, TERMINAL_STATUSES
+from storage.source_store import SQLiteSourceStore
 
 
 store = SQLiteRunStore()
-run_service = RunService(store)
+source_store = SQLiteSourceStore()
+evidence_service = EvidenceService(source_store)
+run_service = RunService(store, evidence_service=evidence_service)
 FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"
 
@@ -157,6 +162,31 @@ def get_run_inspector(run_id: str) -> dict[str, object]:
 @app.get("/api/runs/{run_id}/trace")
 def get_run_trace(run_id: str) -> dict[str, object]:
     return run_service.empty_extension_payload(run_id, "trace")
+
+
+@app.post("/api/sources/seeds", status_code=201)
+def create_source_seed(seed: SourceSeed) -> dict[str, object]:
+    return {"seed": source_store.upsert_seed(seed)}
+
+
+@app.get("/api/sources/seeds")
+def list_source_seeds(enabled_only: bool = False) -> dict[str, object]:
+    return {"seeds": source_store.list_seeds(enabled_only=enabled_only)}
+
+
+@app.post("/api/sources/index")
+def index_source_seed(seed: SourceSeed) -> dict[str, object]:
+    return {"evidence": evidence_service.index_seed(seed)}
+
+
+@app.get("/api/sources/evidence")
+def query_source_evidence(competitor: str, dimension: list[str] = Query(default=[])) -> dict[str, object]:
+    return {"evidence": evidence_service.query_evidence(competitor, dimension)}
+
+
+@app.get("/api/sources/events")
+def list_source_fetch_events(limit: int = Query(default=100, ge=1, le=500)) -> dict[str, object]:
+    return {"events": source_store.list_fetch_events(limit=limit)}
 
 
 @app.get("/")

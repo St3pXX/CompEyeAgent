@@ -14,6 +14,7 @@ from tasks.write_task import write_task
 
 SOURCE_MARKERS = ("[来源:", "source_references", "provenance", "来源 URL", "来源:")
 SOURCE_BLOCK_MARKERS = ("Provenance 索引", "provenance 索引", "来源索引", "参考来源")
+DEFAULT_EVIDENCE_INDEX = "Evidence Index: no indexed evidence is available for this request."
 
 
 @dataclass
@@ -33,6 +34,7 @@ def run_analysis(
     progress_callback: ProgressCallback | None = None,
 ) -> AnalysisRunResult:
     """Run the Phase 1 chain, verify provenance, and rewrite once if needed."""
+    inputs = _with_default_evidence_index(inputs)
     _emit_progress(progress_callback, "collect", "Collector 正在采集公开信息")
     kickoff_result = analysis_crew.kickoff(inputs=inputs)
     _emit_progress(progress_callback, "verify", "Verifier 正在检查报告证据")
@@ -179,3 +181,9 @@ def _task_output(task: Any, fallback: Any) -> str:
 def _emit_progress(callback: ProgressCallback | None, stage: str, message: str) -> None:
     if callback:
         callback(stage, message)
+
+
+def _with_default_evidence_index(inputs: dict[str, Any]) -> dict[str, Any]:
+    next_inputs = dict(inputs)
+    next_inputs.setdefault("evidenceIndex", DEFAULT_EVIDENCE_INDEX)
+    return next_inputs
