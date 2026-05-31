@@ -7,9 +7,10 @@ from typing import Any
 
 from models.schema import CompetitorInput, RunRecord
 from services.coordinator_foundation import CoordinatorFoundationService
+from services.coordinator_loop import CoordinatorLoopService
 from services.evidence_service import DEFAULT_EVIDENCE_INDEX, EvidenceService
-from storage.run_store import SQLiteRunStore
 from services.source_indexer import extract_source_references
+from storage.run_store import SQLiteRunStore
 
 
 STAGE_AGENT = {
@@ -32,6 +33,7 @@ class RunService:
         self.store = store
         self.evidence_service = evidence_service
         self.coordinator_service = coordinator_service
+        self.coordinator_loop = CoordinatorLoopService(store, coordinator_service) if coordinator_service else None
 
     def create_run(self, input_data: CompetitorInput, *, allow_retry: bool = True) -> RunRecord:
         run = self.store.create_run(input_data.model_dump())
@@ -48,14 +50,28 @@ class RunService:
 
     def execute_run(self, run_id: str, *, allow_retry: bool = True) -> None:
         run = self.store.get_run(run_id)
+        from runner import run_analysis
+
+        if self.coordinator_loop is not None:
+            self.coordinator_loop.execute(
+                run_id,
+                input_data=run.input,
+                allow_retry=allow_retry,
+                evidence_index=self._evidence_index_for_input(run.input),
+                run_analysis=run_analysis,
+            )
+            return
+
+        self._execute_legacy(run_id, allow_retry=allow_retry, run_analysis=run_analysis)
+
+    def _execute_legacy(self, run_id: str, *, allow_retry: bool, run_analysis: Any) -> None:
+        run = self.store.get_run(run_id)
         if run.status == "cancelled":
             return
         self.store.update_run_status(run_id, "running")
         self.store.append_event(run_id, "run.started", "分析任务开始执行", agent="Coordinator")
 
         def progress_callback(stage: str, message: str) -> None:
-            if self.coordinator_service is not None:
-                self.coordinator_service.mark_stage_running(run_id, stage)
             self.store.append_event(
                 run_id,
                 "agent.progress",
@@ -65,12 +81,8 @@ class RunService:
             )
 
         try:
-            from runner import run_analysis
-
-            run_inputs = run.input.model_dump()
-            run_inputs.setdefault("evidenceIndex", self._evidence_index_for_input(run.input))
             result = run_analysis(
-                run_inputs,
+                {**run.input.model_dump(), "evidenceIndex": self._evidence_index_for_input(run.input)},
                 allow_retry=allow_retry,
                 progress_callback=progress_callback,
             )
@@ -80,20 +92,11 @@ class RunService:
             self.store.create_artifact(run_id, "verifier_json", result.verifier_result)
             sources = extract_source_references(result.report)
             self.store.create_sources(run_id, sources)
-            provenance_index = json.dumps([source.model_dump() for source in sources], ensure_ascii=False, indent=2)
             self.store.create_artifact(
                 run_id,
                 "provenance_index",
-                provenance_index,
+                json.dumps([source.model_dump() for source in sources], ensure_ascii=False, indent=2),
             )
-            if self.coordinator_service is not None:
-                self.coordinator_service.record_execution_outputs(
-                    run_id,
-                    report_markdown=result.report,
-                    verifier_json=result.verifier_result,
-                    provenance_json=provenance_index,
-                    stage_outputs=getattr(result, "scratchpad_outputs", {}),
-                )
             self.store.append_event(
                 run_id,
                 "artifact.ready",
@@ -102,26 +105,10 @@ class RunService:
                 payload={"passed": result.passed, "retried": result.retried, "source_count": len(sources)},
             )
             self.store.update_run_status(run_id, status, completed=True)
-            if self.coordinator_service is not None:
-                self.coordinator_service.mark_run_finished(run_id, passed=result.passed)
-            self.store.append_event(
-                run_id,
-                "run.completed",
-                "分析任务已完成" if result.passed else "分析任务完成，但需要复核",
-                agent="Coordinator",
-                payload={"status": status},
-            )
+            self.store.append_event(run_id, "run.completed", "分析任务已完成", agent="Coordinator", payload={"status": status})
         except Exception as exc:
             self.store.update_run_status(run_id, "failed", error=str(exc), completed=True)
-            if self.coordinator_service is not None:
-                self.coordinator_service.mark_run_failed(run_id)
-            self.store.append_event(
-                run_id,
-                "run.failed",
-                f"分析任务执行失败：{exc}",
-                agent="Coordinator",
-                payload={"error_type": type(exc).__name__},
-            )
+            self.store.append_event(run_id, "run.failed", f"分析任务执行失败：{exc}", agent="Coordinator")
 
     def retry_run(self, run_id: str) -> RunRecord:
         previous = self.store.get_run(run_id)

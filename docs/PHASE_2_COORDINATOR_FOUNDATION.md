@@ -9,6 +9,7 @@
 - SQLite 持久化：`storage/coordinator_store.py`。
 - Foundation 服务层：`services/coordinator_foundation.py`。
 - `RunService.create_run()` 会同步创建默认 DAG，并写入 `input/brief.json`。
+- `RunService.execute_run()` 已由 `CoordinatorLoopService` 接管执行状态编排。
 - 现有 `progress_callback` 会把 DAG 节点从 `pending` 更新为 `running / completed`。
 - 现有执行结束后，会把报告、Verifier JSON、Provenance Index 写入 Scratchpad：
   - `collect/raw.json`
@@ -35,11 +36,10 @@ collect -> analyze -> write -> verify
 
 ## 本批明确不做
 
-- 不实现 Coordinator 主循环。
 - 不实现 DAG 节点调度执行。
 - 不替换 `RunService.execute_run()`。
 - 不实现前端 Run Inspector UI。
 
 ## 下一批
 
-下一批可以在两个方向里选一个：一是做前端 Run Inspector，把 DAG 和 Scratchpad 可视化出来；二是开始真正的 Coordinator 主循环，把 CrewAI 顺序链路逐步拆成可调度节点。
+下一批可以在两个方向里选一个：一是做前端 Run Inspector，把 DAG 和 Scratchpad 可视化出来；二是继续细化 Coordinator 主循环，把 CrewAI 顺序链路逐步拆成真正可独立调度的节点。

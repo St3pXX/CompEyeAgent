@@ -197,6 +197,67 @@ class CoordinatorFoundationTest(unittest.TestCase):
             self.assertEqual(analyze_node.output_refs, ["analyze/findings.json"])
             self.assertEqual(verify_node.output_refs, ["verify/verifier.json", "verify/provenance_index.json"])
 
+    def test_run_service_executes_through_coordinator_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_store = SQLiteRunStore(Path(tmpdir) / "runs.sqlite3")
+            coordinator_store = SQLiteCoordinatorStore(Path(tmpdir) / "coordinator.sqlite3")
+            coordinator_service = CoordinatorFoundationService(coordinator_store)
+            service = RunService(run_store, coordinator_service=coordinator_service)
+            run = service.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]))
+            result = SimpleNamespace(
+                report="报告 [来源: https://example.com]",
+                verifier_result='{"passed": true, "confidence": 95, "issues": []}',
+                passed=True,
+                retried=False,
+                scratchpad_outputs={"collect/raw.json": "[]"},
+            )
+            run_analysis = Mock(return_value=result)
+            fake_runner = SimpleNamespace(run_analysis=run_analysis)
+
+            with patch.dict("sys.modules", {"runner": fake_runner}):
+                service.execute_run(run.run_id)
+
+            events = run_store.list_events(run.run_id)
+            statuses = {node.key: node.status for node in coordinator_store.list_nodes(run.run_id)}
+            self.assertEqual(run_store.get_run(run.run_id).status, "passed")
+            self.assertIn("Coordinator 主循环开始执行", [event.message for event in events])
+            self.assertEqual(statuses["verify"], "completed")
+            self.assertTrue(any(item.path == "collect/raw.json" for item in coordinator_service.list_scratchpad(run.run_id)))
+
+    def test_coordinator_loop_marks_failed_run_and_node(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_store = SQLiteRunStore(Path(tmpdir) / "runs.sqlite3")
+            coordinator_store = SQLiteCoordinatorStore(Path(tmpdir) / "coordinator.sqlite3")
+            coordinator_service = CoordinatorFoundationService(coordinator_store)
+            service = RunService(run_store, coordinator_service=coordinator_service)
+            run = service.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]))
+            run_analysis = Mock(side_effect=RuntimeError("boom"))
+            fake_runner = SimpleNamespace(run_analysis=run_analysis)
+
+            with patch.dict("sys.modules", {"runner": fake_runner}):
+                service.execute_run(run.run_id)
+
+            statuses = {node.key: node.status for node in coordinator_store.list_nodes(run.run_id)}
+            self.assertEqual(run_store.get_run(run.run_id).status, "failed")
+            self.assertEqual(statuses["verify"], "failed")
+
+    def test_cancelled_run_does_not_enter_coordinator_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_store = SQLiteRunStore(Path(tmpdir) / "runs.sqlite3")
+            coordinator_store = SQLiteCoordinatorStore(Path(tmpdir) / "coordinator.sqlite3")
+            coordinator_service = CoordinatorFoundationService(coordinator_store)
+            service = RunService(run_store, coordinator_service=coordinator_service)
+            run = service.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]))
+            service.cancel_run(run.run_id)
+            run_analysis = Mock()
+            fake_runner = SimpleNamespace(run_analysis=run_analysis)
+
+            with patch.dict("sys.modules", {"runner": fake_runner}):
+                service.execute_run(run.run_id)
+
+            run_analysis.assert_not_called()
+            self.assertEqual(run_store.get_run(run.run_id).status, "cancelled")
+
 
 if __name__ == "__main__":
     unittest.main()
