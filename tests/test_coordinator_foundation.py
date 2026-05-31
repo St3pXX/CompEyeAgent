@@ -134,6 +134,28 @@ class CoordinatorFoundationTest(unittest.TestCase):
             self.assertEqual(verify_node.input_refs, ["write/report.md"])
             self.assertEqual(verify_node.output_refs, ["verify/verifier.json", "verify/provenance_index.json"])
 
+    def test_record_stage_outputs_writes_intermediate_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = SQLiteCoordinatorStore(Path(tmpdir) / "coordinator.sqlite3")
+            service = CoordinatorFoundationService(store)
+            service.ensure_default_dag("run-1", {"productName": "飞书"})
+
+            service.record_stage_outputs(
+                "run-1",
+                {
+                    "collect/raw.json": '[{"competitor": "钉钉"}]',
+                    "analyze/findings.json": '[{"dimension": "定价"}]',
+                },
+            )
+
+            items = {item.path: item for item in service.list_scratchpad("run-1")}
+            collect_node = store.get_node("run-1", "collect")
+            analyze_node = store.get_node("run-1", "analyze")
+            self.assertEqual(items["collect/raw.json"].kind, "json")
+            self.assertEqual(items["analyze/findings.json"].kind, "json")
+            self.assertEqual(collect_node.output_refs, ["collect/raw.json"])
+            self.assertEqual(analyze_node.output_refs, ["analyze/findings.json"])
+
     def test_run_service_records_execution_outputs_to_scratchpad(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             run_store = SQLiteRunStore(Path(tmpdir) / "runs.sqlite3")
@@ -146,6 +168,10 @@ class CoordinatorFoundationTest(unittest.TestCase):
                 verifier_result='{"passed": true, "confidence": 95, "issues": []}',
                 passed=True,
                 retried=False,
+                scratchpad_outputs={
+                    "collect/raw.json": '[{"competitor": "钉钉"}]',
+                    "analyze/findings.json": '[{"dimension": "定价"}]',
+                },
             )
             run_analysis = Mock(return_value=result)
             fake_runner = SimpleNamespace(run_analysis=run_analysis)
@@ -155,7 +181,20 @@ class CoordinatorFoundationTest(unittest.TestCase):
 
             paths = {item.path for item in coordinator_service.list_scratchpad(run.run_id)}
             verify_node = coordinator_store.get_node(run.run_id, "verify")
-            self.assertTrue({"input/brief.json", "write/report.md", "verify/verifier.json", "verify/provenance_index.json"}.issubset(paths))
+            collect_node = coordinator_store.get_node(run.run_id, "collect")
+            analyze_node = coordinator_store.get_node(run.run_id, "analyze")
+            self.assertTrue(
+                {
+                    "input/brief.json",
+                    "collect/raw.json",
+                    "analyze/findings.json",
+                    "write/report.md",
+                    "verify/verifier.json",
+                    "verify/provenance_index.json",
+                }.issubset(paths)
+            )
+            self.assertEqual(collect_node.output_refs, ["collect/raw.json"])
+            self.assertEqual(analyze_node.output_refs, ["analyze/findings.json"])
             self.assertEqual(verify_node.output_refs, ["verify/verifier.json", "verify/provenance_index.json"])
 
 

@@ -1,6 +1,6 @@
 import json
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Any
 
@@ -8,6 +8,8 @@ from crew import analysis_crew
 from crewai import Crew
 from crew.agents.verifier import verifier
 from crew.agents.writer import writer
+from tasks.analyze_task import analyze_task
+from tasks.collect_task import collect_info_task
 from tasks.verify_task import verify_task
 from tasks.write_task import write_task
 
@@ -23,6 +25,7 @@ class AnalysisRunResult:
     verifier_result: str
     passed: bool
     retried: bool = False
+    scratchpad_outputs: dict[str, str] = field(default_factory=dict)
 
 
 ProgressCallback = Callable[[str, str], None]
@@ -40,6 +43,12 @@ def run_analysis(
     _emit_progress(progress_callback, "verify", "Verifier 正在检查报告证据")
     report = _task_output(write_task, fallback=kickoff_result)
     verifier_result = _task_output(verify_task, fallback=kickoff_result)
+    scratchpad_outputs = {
+        "collect/raw.json": _task_output(collect_info_task, fallback=""),
+        "analyze/findings.json": _task_output(analyze_task, fallback=""),
+        "write/report.md": report,
+        "verify/verifier.json": verifier_result,
+    }
     issues = _verification_issues(report, verifier_result)
 
     if not issues or not allow_retry:
@@ -47,6 +56,7 @@ def run_analysis(
             report=report,
             verifier_result=verifier_result,
             passed=not issues,
+            scratchpad_outputs=scratchpad_outputs,
         )
 
     _emit_progress(progress_callback, "rewrite", "首次质检未通过，正在重写报告")
@@ -54,6 +64,14 @@ def run_analysis(
     _emit_progress(progress_callback, "final", "正在整理最终结果")
     retry_report = _task_output(retry_write_task, fallback=retry_result)
     retry_verifier = _task_output(retry_verify_task, fallback=retry_result)
+    scratchpad_outputs.update(
+        {
+            "write/report.md": retry_report,
+            "verify/verifier.json": retry_verifier,
+            "write/retry_report.md": retry_report,
+            "verify/retry_verifier.json": retry_verifier,
+        }
+    )
     retry_issues = _verification_issues(retry_report, retry_verifier)
 
     return AnalysisRunResult(
@@ -61,6 +79,7 @@ def run_analysis(
         verifier_result=retry_verifier,
         passed=not retry_issues,
         retried=True,
+        scratchpad_outputs=scratchpad_outputs,
     )
 
 

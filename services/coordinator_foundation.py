@@ -84,7 +84,9 @@ class CoordinatorFoundationService:
         report_markdown: str,
         verifier_json: str,
         provenance_json: str,
+        stage_outputs: dict[str, str] | None = None,
     ) -> None:
+        self.record_stage_outputs(run_id, stage_outputs or {})
         self.write_scratchpad(
             run_id,
             ScratchpadWriteRequest(
@@ -122,6 +124,40 @@ class CoordinatorFoundationService:
             input_refs=["write/report.md"],
             output_refs=["verify/verifier.json", "verify/provenance_index.json"],
         )
+
+    def record_stage_outputs(self, run_id: str, stage_outputs: dict[str, str]) -> None:
+        stage_map = {
+            "collect/raw.json": ("collect", "json"),
+            "analyze/findings.json": ("analyze", "json"),
+            "write/report.md": ("write", "markdown"),
+            "write/retry_report.md": ("write", "markdown"),
+            "verify/verifier.json": ("verify", "json"),
+            "verify/retry_verifier.json": ("verify", "json"),
+        }
+        refs_by_node: dict[str, list[str]] = {}
+        for path, content in stage_outputs.items():
+            if not content:
+                continue
+            node_key, kind = stage_map.get(path, ("collect", "text"))
+            self.write_scratchpad(
+                run_id,
+                ScratchpadWriteRequest(
+                    path=path,
+                    kind=kind,  # type: ignore[arg-type]
+                    content=content,
+                    producer_node_id=self._node_id(run_id, node_key),
+                    metadata={"source": "runner.task_output"},
+                ),
+            )
+            refs_by_node.setdefault(node_key, []).append(path)
+
+        for node_key, refs in refs_by_node.items():
+            node = self.store.get_node(run_id, node_key)
+            merged_refs = [*node.output_refs]
+            for ref in refs:
+                if ref not in merged_refs:
+                    merged_refs.append(ref)
+            self.store.update_node_refs(run_id, node_key, output_refs=merged_refs)
 
     def write_scratchpad(self, run_id: str, request: ScratchpadWriteRequest) -> ScratchpadItem:
         return self.store.write_scratchpad_item(

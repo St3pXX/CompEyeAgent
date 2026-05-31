@@ -92,6 +92,7 @@ class RunService:
                     report_markdown=result.report,
                     verifier_json=result.verifier_result,
                     provenance_json=provenance_index,
+                    stage_outputs=getattr(result, "scratchpad_outputs", {}),
                 )
             self.store.append_event(
                 run_id,
