@@ -1,3 +1,10 @@
+from models.coordinator import (
+    DAGEdge,
+    DAGNode,
+    DAGView,
+    ScratchpadItem,
+    ScratchpadWriteRequest,
+)
 from models.schema import (
     AnalysisFinding,
     Claim,
@@ -22,6 +29,9 @@ __all__ = [
     "AnalysisFinding",
     "Claim",
     "CompetitorInput",
+    "DAGEdge",
+    "DAGNode",
+    "DAGView",
     "Dimension",
     "Evidence",
     "EvidenceItem",
@@ -29,6 +39,8 @@ __all__ = [
     "RawDocument",
     "RefreshCadence",
     "ReportArtifact",
+    "ScratchpadItem",
+    "ScratchpadWriteRequest",
     "SourceFetchEvent",
     "SourceProvider",
     "SourceReference",

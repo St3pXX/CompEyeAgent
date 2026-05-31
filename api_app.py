@@ -14,18 +14,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
+from models.coordinator import ScratchpadWriteRequest
 from models.schema import CreateRunRequest, CreateRunResponse, RunDetailResponse
 from models.source_layer import SourceSeed
+from services.coordinator_foundation import CoordinatorFoundationService
 from services.evidence_service import EvidenceService
 from services.run_service import RunService
+from storage.coordinator_store import SQLiteCoordinatorStore
 from storage.run_store import SQLiteRunStore, TERMINAL_STATUSES
 from storage.source_store import SQLiteSourceStore
 
 
 store = SQLiteRunStore()
+coordinator_store = SQLiteCoordinatorStore()
+coordinator_service = CoordinatorFoundationService(coordinator_store)
 source_store = SQLiteSourceStore()
 evidence_service = EvidenceService(source_store)
-run_service = RunService(store, evidence_service=evidence_service)
+run_service = RunService(store, evidence_service=evidence_service, coordinator_service=coordinator_service)
 FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"
 
@@ -146,17 +151,38 @@ def retry_run(run_id: str, background_tasks: BackgroundTasks) -> CreateRunRespon
 
 @app.get("/api/runs/{run_id}/dag")
 def get_run_dag(run_id: str) -> dict[str, object]:
-    return run_service.empty_extension_payload(run_id, "dag")
+    try:
+        run = store.get_run(run_id)
+        return {"dag": coordinator_service.ensure_default_dag(run_id, run.input.model_dump())}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found") from None
 
 
 @app.get("/api/runs/{run_id}/scratchpad")
 def get_run_scratchpad(run_id: str) -> dict[str, object]:
-    return run_service.empty_extension_payload(run_id, "scratchpad")
+    try:
+        store.get_run(run_id)
+        return {"items": coordinator_service.list_scratchpad(run_id)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found") from None
+
+
+@app.post("/api/runs/{run_id}/scratchpad", status_code=201)
+def write_run_scratchpad(run_id: str, request: ScratchpadWriteRequest) -> dict[str, object]:
+    try:
+        store.get_run(run_id)
+        return {"item": coordinator_service.write_scratchpad(run_id, request)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found") from None
 
 
 @app.get("/api/runs/{run_id}/inspector")
 def get_run_inspector(run_id: str) -> dict[str, object]:
-    return run_service.empty_extension_payload(run_id, "inspector")
+    try:
+        store.get_run(run_id)
+        return {"inspector": coordinator_service.inspector_summary(run_id)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found") from None
 
 
 @app.get("/api/runs/{run_id}/trace")
