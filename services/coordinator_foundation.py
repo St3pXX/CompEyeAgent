@@ -77,6 +77,52 @@ class CoordinatorFoundationService:
         if stage_key in nodes:
             self.store.update_node_status(run_id, stage_key, "failed")
 
+    def record_execution_outputs(
+        self,
+        run_id: str,
+        *,
+        report_markdown: str,
+        verifier_json: str,
+        provenance_json: str,
+    ) -> None:
+        self.write_scratchpad(
+            run_id,
+            ScratchpadWriteRequest(
+                path="write/report.md",
+                kind="markdown",
+                content=report_markdown,
+                producer_node_id=self._node_id(run_id, "write"),
+                metadata={"source": "artifact.report_markdown"},
+            ),
+        )
+        self.write_scratchpad(
+            run_id,
+            ScratchpadWriteRequest(
+                path="verify/verifier.json",
+                kind="json",
+                content=verifier_json,
+                producer_node_id=self._node_id(run_id, "verify"),
+                metadata={"source": "artifact.verifier_json"},
+            ),
+        )
+        self.write_scratchpad(
+            run_id,
+            ScratchpadWriteRequest(
+                path="verify/provenance_index.json",
+                kind="json",
+                content=provenance_json,
+                producer_node_id=self._node_id(run_id, "verify"),
+                metadata={"source": "artifact.provenance_index"},
+            ),
+        )
+        self.store.update_node_refs(run_id, "write", output_refs=["write/report.md"])
+        self.store.update_node_refs(
+            run_id,
+            "verify",
+            input_refs=["write/report.md"],
+            output_refs=["verify/verifier.json", "verify/provenance_index.json"],
+        )
+
     def write_scratchpad(self, run_id: str, request: ScratchpadWriteRequest) -> ScratchpadItem:
         return self.store.write_scratchpad_item(
             ScratchpadItem(
@@ -103,6 +149,12 @@ class CoordinatorFoundationService:
             "dag": {"node_count": len(nodes), "status_counts": status_counts},
             "scratchpad": {"item_count": len(scratchpad_items), "paths": [item.path for item in scratchpad_items]},
         }
+
+    def _node_id(self, run_id: str, key: str) -> str | None:
+        try:
+            return self.store.get_node(run_id, key).node_id
+        except KeyError:
+            return None
 
 
 def _edges_from_nodes(nodes: list[DAGNode]) -> list[DAGEdge]:

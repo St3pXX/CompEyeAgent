@@ -96,6 +96,35 @@ class SQLiteCoordinatorStore:
             )
         return self.get_node(run_id, key)
 
+    def update_node_refs(
+        self,
+        run_id: str,
+        key: str,
+        *,
+        input_refs: list[str] | None = None,
+        output_refs: list[str] | None = None,
+    ) -> DAGNode:
+        node = self.get_node(run_id, key)
+        next_input_refs = node.input_refs if input_refs is None else input_refs
+        next_output_refs = node.output_refs if output_refs is None else output_refs
+        now = utc_now()
+        with self._connection() as conn:
+            conn.execute(
+                """
+                UPDATE dag_nodes
+                SET input_refs_json = ?, output_refs_json = ?, updated_at = ?
+                WHERE run_id = ? AND key = ?
+                """,
+                (
+                    json.dumps(next_input_refs, ensure_ascii=False),
+                    json.dumps(next_output_refs, ensure_ascii=False),
+                    now,
+                    run_id,
+                    key,
+                ),
+            )
+        return self.get_node(run_id, key)
+
     def write_scratchpad_item(self, item: ScratchpadItem) -> ScratchpadItem:
         item.content_preview = item.content[:600]
         item.updated_at = utc_now()

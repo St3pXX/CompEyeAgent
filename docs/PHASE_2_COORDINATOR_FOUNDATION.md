@@ -10,6 +10,11 @@
 - Foundation 服务层：`services/coordinator_foundation.py`。
 - `RunService.create_run()` 会同步创建默认 DAG，并写入 `input/brief.json`。
 - 现有 `progress_callback` 会把 DAG 节点从 `pending` 更新为 `running / completed`。
+- 现有执行结束后，会把报告、Verifier JSON、Provenance Index 写入 Scratchpad：
+  - `write/report.md`
+  - `verify/verifier.json`
+  - `verify/provenance_index.json`
+- `write` 和 `verify` 节点会记录对应的 `input_refs / output_refs`。
 - API 接入：
   - `GET /api/runs/{run_id}/dag`
   - `GET /api/runs/{run_id}/scratchpad`
@@ -35,4 +40,4 @@ collect -> analyze -> write -> verify
 
 ## 下一批
 
-下一批建议把 `run.completed / run.failed` 之外的中间产物也写入 Scratchpad，例如 Collector 原始采集 JSON、Analyzer finding JSON 和 Writer draft Markdown。完成这一步之后，再引入真正的 Coordinator 主循环会更稳。
+下一批建议把 Collector 原始采集 JSON、Analyzer finding JSON 和 Writer draft Markdown 也结构化写入 Scratchpad。完成这一步之后，再引入真正的 Coordinator 主循环会更稳。

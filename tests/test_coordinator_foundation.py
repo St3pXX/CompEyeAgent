@@ -1,6 +1,8 @@
 import tempfile
+from types import SimpleNamespace
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -109,6 +111,52 @@ class CoordinatorFoundationTest(unittest.TestCase):
 
             statuses = {node.key: node.status for node in coordinator_store.list_nodes(run.run_id)}
             self.assertEqual(statuses["verify"], "failed")
+
+    def test_record_execution_outputs_writes_scratchpad_and_node_refs(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            store = SQLiteCoordinatorStore(Path(tmpdir) / "coordinator.sqlite3")
+            service = CoordinatorFoundationService(store)
+            service.ensure_default_dag("run-1", {"productName": "飞书"})
+
+            service.record_execution_outputs(
+                "run-1",
+                report_markdown="# 报告",
+                verifier_json='{"passed": true}',
+                provenance_json="[]",
+            )
+
+            items = {item.path: item for item in service.list_scratchpad("run-1")}
+            write_node = store.get_node("run-1", "write")
+            verify_node = store.get_node("run-1", "verify")
+            self.assertEqual(items["write/report.md"].content, "# 报告")
+            self.assertEqual(items["verify/verifier.json"].content, '{"passed": true}')
+            self.assertEqual(write_node.output_refs, ["write/report.md"])
+            self.assertEqual(verify_node.input_refs, ["write/report.md"])
+            self.assertEqual(verify_node.output_refs, ["verify/verifier.json", "verify/provenance_index.json"])
+
+    def test_run_service_records_execution_outputs_to_scratchpad(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_store = SQLiteRunStore(Path(tmpdir) / "runs.sqlite3")
+            coordinator_store = SQLiteCoordinatorStore(Path(tmpdir) / "coordinator.sqlite3")
+            coordinator_service = CoordinatorFoundationService(coordinator_store)
+            service = RunService(run_store, coordinator_service=coordinator_service)
+            run = service.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]))
+            result = SimpleNamespace(
+                report="报告 [来源: https://example.com]",
+                verifier_result='{"passed": true, "confidence": 95, "issues": []}',
+                passed=True,
+                retried=False,
+            )
+            run_analysis = Mock(return_value=result)
+            fake_runner = SimpleNamespace(run_analysis=run_analysis)
+
+            with patch.dict("sys.modules", {"runner": fake_runner}):
+                service.execute_run(run.run_id)
+
+            paths = {item.path for item in coordinator_service.list_scratchpad(run.run_id)}
+            verify_node = coordinator_store.get_node(run.run_id, "verify")
+            self.assertTrue({"input/brief.json", "write/report.md", "verify/verifier.json", "verify/provenance_index.json"}.issubset(paths))
+            self.assertEqual(verify_node.output_refs, ["verify/verifier.json", "verify/provenance_index.json"])
 
 
 if __name__ == "__main__":

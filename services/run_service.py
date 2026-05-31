@@ -80,11 +80,19 @@ class RunService:
             self.store.create_artifact(run_id, "verifier_json", result.verifier_result)
             sources = extract_source_references(result.report)
             self.store.create_sources(run_id, sources)
+            provenance_index = json.dumps([source.model_dump() for source in sources], ensure_ascii=False, indent=2)
             self.store.create_artifact(
                 run_id,
                 "provenance_index",
-                json.dumps([source.model_dump() for source in sources], ensure_ascii=False, indent=2),
+                provenance_index,
             )
+            if self.coordinator_service is not None:
+                self.coordinator_service.record_execution_outputs(
+                    run_id,
+                    report_markdown=result.report,
+                    verifier_json=result.verifier_result,
+                    provenance_json=provenance_index,
+                )
             self.store.append_event(
                 run_id,
                 "artifact.ready",
