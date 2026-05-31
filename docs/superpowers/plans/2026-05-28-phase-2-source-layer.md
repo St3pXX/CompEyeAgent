@@ -1,8 +1,8 @@
-# Phase 2 Source Layer Implementation Plan
+# Phase 2 Source Layer Sub-Milestone Implementation Plan
 
 ## Goal
 
-Build a source intelligence layer before the CrewAI analysis chain. The layer indexes credible but sparse evidence from official pages, news, GitHub, and later social, finance, and patent providers. The Collector should synthesize across whatever credible sources are available instead of requiring every provider to cover every fact.
+Build the Source Layer sub-milestone inside Phase 2 before the CrewAI analysis chain. This is not the full Phase 2 roadmap. The layer indexes credible but sparse evidence from official pages, news, GitHub, blogs/RSS, and Reddit social search, while keeping finance and patent behind explicit disabled boundaries. The Collector should synthesize across whatever credible sources are available instead of requiring every provider to cover every fact.
 
 ## Current Scope
 
@@ -11,7 +11,9 @@ Build a source intelligence layer before the CrewAI analysis chain. The layer in
 - Add official source ingestion through Jina Reader.
 - Add NewsAPI ingestion when `NEWS_API_KEY` is configured.
 - Add GitHub public repository metadata ingestion, with optional `GITHUB_TOKEN` for rate limits.
-- Keep social, finance, and patent providers behind stable disabled connector boundaries until their API policies are ready.
+- Add RSS/Atom blog ingestion without API keys.
+- Add Reddit public search ingestion as a lightweight social signal, with documented 403/rate-limit caveats.
+- Keep finance and patent providers behind stable disabled connector boundaries until their API policies are ready.
 - Inject an Evidence Index into the existing Collector prompt before runtime web search.
 - Provide local CLI operations for initializing default seeds and indexing due sources.
 
@@ -29,7 +31,7 @@ Build a source intelligence layer before the CrewAI analysis chain. The layer in
 
 1. Define `models/source_layer.py` with `SourceProvider`, `RefreshCadence`, `FetchStatus`, `SourceSeed`, `RawDocument`, `EvidenceItem`, and `SourceFetchEvent`.
 2. Add `storage/source_store.py` with SQLite tables and helpers for seeds, documents, evidence, and fetch events.
-3. Add `services/source_connectors.py` with `OfficialJinaConnector`, `NewsApiConnector`, `GitHubRepoConnector`, and `DisabledConnector`.
+3. Add `services/source_connectors.py` with `OfficialJinaConnector`, `NewsApiConnector`, `GitHubRepoConnector`, `RssFeedConnector`, `RedditSearchConnector`, and `DisabledConnector`.
 4. Add deterministic evidence extraction in `services/evidence_extractor.py`.
 5. Add `services/evidence_service.py` to orchestrate fetch, persist, extract, query, and prompt formatting.
 6. Add `services/source_refresh.py` for cadence-based due-source selection.

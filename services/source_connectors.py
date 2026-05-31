@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import os
-from urllib.parse import parse_qs, urlparse
+import re
+import xml.etree.ElementTree as ET
+from datetime import UTC, datetime
+from html import unescape
 from typing import Protocol
+from urllib.parse import parse_qs, urlparse
 
 import httpx
 
@@ -149,6 +153,78 @@ class GitHubRepoConnector:
         ]
 
 
+class RssFeedConnector:
+    provider = SourceProvider.BLOG
+
+    def __init__(self, provider: SourceProvider = SourceProvider.BLOG, client: httpx.Client | None = None) -> None:
+        self.provider = provider
+        self.client = client or httpx.Client(timeout=30, follow_redirects=True)
+
+    def fetch(self, seed: SourceSeed) -> list[RawDocument]:
+        parsed = urlparse(seed.url)
+        if parsed.scheme not in {"http", "https"}:
+            return []
+        response = self.client.get(seed.url)
+        response.raise_for_status()
+        return _parse_feed_documents(response.text, seed, self.provider)
+
+
+class RedditSearchConnector:
+    provider = SourceProvider.SOCIAL
+
+    def __init__(self, client: httpx.Client | None = None, user_agent: str | None = None) -> None:
+        self.client = client or httpx.Client(timeout=30, follow_redirects=True)
+        self.user_agent = user_agent or os.getenv("REDDIT_USER_AGENT", "CompEyeAgent/0.1")
+
+    def fetch(self, seed: SourceSeed) -> list[RawDocument]:
+        query = str(seed.metadata.get("query") or _query_from_url(seed.url) or seed.competitor)
+        if not query:
+            return []
+        response = self.client.get(
+            "https://www.reddit.com/search.json",
+            params={
+                "q": query,
+                "limit": int(seed.metadata.get("limit", 5)),
+                "sort": seed.metadata.get("sort", "new"),
+                "t": seed.metadata.get("time", "month"),
+            },
+            headers={"User-Agent": self.user_agent},
+        )
+        response.raise_for_status()
+        children = response.json().get("data", {}).get("children", [])
+        documents: list[RawDocument] = []
+        for child in children:
+            post = child.get("data") or {}
+            permalink = post.get("permalink") or ""
+            url = f"https://www.reddit.com{permalink}" if permalink.startswith("/") else post.get("url") or seed.url
+            title = post.get("title") or seed.label
+            content = (
+                f"title={title}; "
+                f"subreddit={post.get('subreddit') or ''}; "
+                f"score={post.get('score', 0)}; "
+                f"comments={post.get('num_comments', 0)}; "
+                f"text={post.get('selftext') or ''}"
+            )
+            documents.append(
+                RawDocument(
+                    provider=SourceProvider.SOCIAL,
+                    competitor=seed.competitor,
+                    url=url,
+                    title=title,
+                    content=content,
+                    published_at=_created_utc_to_iso(post.get("created_utc")),
+                    metadata={
+                        "seed_id": seed.seed_id,
+                        "seed_label": seed.label,
+                        "connector": "reddit_search",
+                        "subreddit": post.get("subreddit") or "",
+                        **seed.metadata,
+                    },
+                )
+            )
+        return documents
+
+
 class DisabledConnector:
     def __init__(self, provider: SourceProvider | str, reason: str) -> None:
         self.provider = SourceProvider(provider)
@@ -168,6 +244,14 @@ def connector_for_provider(provider: SourceProvider | str) -> SourceConnector:
         return DisabledConnector(provider, "NEWS_API_KEY is not configured")
     if provider == SourceProvider.GITHUB:
         return GitHubRepoConnector()
+    if provider == SourceProvider.BLOG:
+        return RssFeedConnector()
+    if provider == SourceProvider.SOCIAL:
+        return RedditSearchConnector()
+    if provider == SourceProvider.FINANCE:
+        return DisabledConnector(provider, "CRUNCHBASE_API_KEY and finance provider policy are not configured for Phase 2")
+    if provider == SourceProvider.PATENT:
+        return DisabledConnector(provider, "PATENT_API_KEY and patent provider policy are not configured for Phase 2")
     return DisabledConnector(provider, f"{provider.value} connector is not implemented in Phase 2 source-layer v1")
 
 
@@ -199,3 +283,76 @@ def _github_repo_from_url(url: str) -> tuple[str, str]:
         if len(parts) >= 2:
             return parts[0], parts[1]
     return "", ""
+
+
+def _parse_feed_documents(text: str, seed: SourceSeed, provider: SourceProvider) -> list[RawDocument]:
+    root = ET.fromstring(text)
+    items = root.findall(".//item")
+    if items:
+        return [_rss_item_to_document(item, seed, provider) for item in items]
+
+    atom_entries = root.findall(".//{http://www.w3.org/2005/Atom}entry")
+    return [_atom_entry_to_document(entry, seed, provider) for entry in atom_entries]
+
+
+def _rss_item_to_document(item: ET.Element, seed: SourceSeed, provider: SourceProvider) -> RawDocument:
+    title = _child_text(item, "title") or seed.label
+    link = _child_text(item, "link") or seed.url
+    description = _clean_feed_text(_child_text(item, "description"))
+    content = _clean_feed_text(_child_text(item, "{http://purl.org/rss/1.0/modules/content/}encoded"))
+    return RawDocument(
+        provider=provider,
+        competitor=seed.competitor,
+        url=link,
+        title=title,
+        content="\n".join(part for part in [title, description, content] if part),
+        published_at=_child_text(item, "pubDate") or None,
+        metadata={
+            "seed_id": seed.seed_id,
+            "seed_label": seed.label,
+            "connector": "rss_feed",
+            **seed.metadata,
+        },
+    )
+
+
+def _atom_entry_to_document(entry: ET.Element, seed: SourceSeed, provider: SourceProvider) -> RawDocument:
+    namespace = "{http://www.w3.org/2005/Atom}"
+    title = _child_text(entry, f"{namespace}title") or seed.label
+    summary = _clean_feed_text(_child_text(entry, f"{namespace}summary"))
+    content = _clean_feed_text(_child_text(entry, f"{namespace}content"))
+    link = seed.url
+    link_element = entry.find(f"{namespace}link")
+    if link_element is not None:
+        link = link_element.attrib.get("href") or link
+    return RawDocument(
+        provider=provider,
+        competitor=seed.competitor,
+        url=link,
+        title=title,
+        content="\n".join(part for part in [title, summary, content] if part),
+        published_at=_child_text(entry, f"{namespace}updated") or _child_text(entry, f"{namespace}published") or None,
+        metadata={
+            "seed_id": seed.seed_id,
+            "seed_label": seed.label,
+            "connector": "atom_feed",
+            **seed.metadata,
+        },
+    )
+
+
+def _child_text(element: ET.Element, tag: str) -> str:
+    child = element.find(tag)
+    if child is None or child.text is None:
+        return ""
+    return child.text.strip()
+
+
+def _clean_feed_text(value: str) -> str:
+    return " ".join(re.sub(r"<[^>]+>", " ", unescape(value)).split())
+
+
+def _created_utc_to_iso(value: object) -> str | None:
+    if not isinstance(value, (int, float)):
+        return None
+    return datetime.fromtimestamp(value, UTC).isoformat()

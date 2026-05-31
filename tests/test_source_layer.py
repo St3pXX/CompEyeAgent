@@ -12,7 +12,15 @@ from models.schema import CompetitorInput
 from models.source_layer import EvidenceItem, FetchStatus, RawDocument, SourceFetchEvent, SourceSeed
 from services.evidence_extractor import extract_evidence
 from services.evidence_service import EvidenceService
-from services.source_connectors import DisabledConnector, GitHubRepoConnector, NewsApiConnector, OfficialJinaConnector
+from services.source_connectors import (
+    DisabledConnector,
+    GitHubRepoConnector,
+    NewsApiConnector,
+    OfficialJinaConnector,
+    RedditSearchConnector,
+    RssFeedConnector,
+    connector_for_provider,
+)
 from services.run_service import RunService
 from storage.run_store import SQLiteRunStore
 from storage.source_store import SQLiteSourceStore
@@ -118,6 +126,15 @@ class SourceLayerTest(unittest.TestCase):
 
         self.assertEqual(connector.fetch(seed), [])
 
+    def test_finance_and_patent_have_explicit_disabled_boundaries(self) -> None:
+        finance = connector_for_provider("finance")
+        patent = connector_for_provider("patent")
+
+        self.assertIsInstance(finance, DisabledConnector)
+        self.assertIsInstance(patent, DisabledConnector)
+        self.assertIn("CRUNCHBASE_API_KEY", finance.reason)
+        self.assertIn("PATENT_API_KEY", patent.reason)
+
     def test_news_api_connector_maps_articles_to_raw_documents(self) -> None:
         response = Mock()
         response.json.return_value = {
@@ -184,6 +201,110 @@ class SourceLayerTest(unittest.TestCase):
             "https://api.github.com/repos/owner/repo",
             headers={"Accept": "application/vnd.github+json"},
         )
+
+    def test_rss_feed_connector_maps_items_to_blog_documents(self) -> None:
+        response = Mock()
+        response.text = """
+        <rss version="2.0">
+          <channel>
+            <item>
+              <title>飞书发布协作更新</title>
+              <link>https://blog.example.com/feishu-update</link>
+              <description><![CDATA[飞书发布新的协作能力。]]></description>
+              <pubDate>Fri, 29 May 2026 00:00:00 GMT</pubDate>
+            </item>
+          </channel>
+        </rss>
+        """
+        response.raise_for_status.return_value = None
+        client = Mock()
+        client.get.return_value = response
+        connector = RssFeedConnector(client=client)
+        seed = SourceSeed(
+            provider="blog",
+            competitor="飞书",
+            url="https://blog.example.com/rss.xml",
+            label="飞书博客",
+            metadata={"dimension": "技术动态", "indicators": ["发布"]},
+        )
+
+        documents = connector.fetch(seed)
+
+        self.assertEqual(documents[0].provider, "blog")
+        self.assertEqual(documents[0].url, "https://blog.example.com/feishu-update")
+        self.assertIn("飞书发布", documents[0].content)
+        self.assertEqual(documents[0].metadata["connector"], "rss_feed")
+
+    def test_atom_feed_connector_maps_entries_to_blog_documents(self) -> None:
+        response = Mock()
+        response.text = """
+        <feed xmlns="http://www.w3.org/2005/Atom">
+          <entry>
+            <title>钉钉技术架构更新</title>
+            <link href="https://blog.example.com/dingtalk-architecture" />
+            <summary>钉钉介绍技术架构实践。</summary>
+            <updated>2026-05-29T00:00:00Z</updated>
+          </entry>
+        </feed>
+        """
+        response.raise_for_status.return_value = None
+        client = Mock()
+        client.get.return_value = response
+        connector = RssFeedConnector(client=client)
+        seed = SourceSeed(
+            provider="blog",
+            competitor="钉钉",
+            url="https://blog.example.com/atom.xml",
+            label="钉钉博客",
+            metadata={"dimension": "技术动态", "indicators": ["架构"]},
+        )
+
+        documents = connector.fetch(seed)
+
+        self.assertEqual(documents[0].provider, "blog")
+        self.assertEqual(documents[0].url, "https://blog.example.com/dingtalk-architecture")
+        self.assertIn("技术架构", documents[0].content)
+        self.assertEqual(documents[0].metadata["connector"], "atom_feed")
+
+    def test_reddit_search_connector_maps_posts_to_social_documents(self) -> None:
+        response = Mock()
+        response.json.return_value = {
+            "data": {
+                "children": [
+                    {
+                        "data": {
+                            "title": "Users discuss Feishu pricing",
+                            "selftext": "comments mention pricing and onboarding.",
+                            "subreddit": "SaaS",
+                            "score": 18,
+                            "num_comments": 5,
+                            "permalink": "/r/SaaS/comments/example/users_discuss_feishu_pricing/",
+                            "created_utc": 1780012800,
+                        }
+                    }
+                ]
+            }
+        }
+        response.raise_for_status.return_value = None
+        client = Mock()
+        client.get.return_value = response
+        connector = RedditSearchConnector(client=client, user_agent="CompEyeAgentTest/0.1")
+        seed = SourceSeed(
+            provider="social",
+            competitor="飞书",
+            url="reddit://search?query=飞书",
+            label="飞书 Reddit 搜索",
+            metadata={"dimension": "用户反馈", "indicators": ["comments"], "limit": 1},
+        )
+
+        documents = connector.fetch(seed)
+
+        self.assertEqual(documents[0].provider, "social")
+        self.assertIn("score=18", documents[0].content)
+        self.assertEqual(documents[0].metadata["connector"], "reddit_search")
+        self.assertEqual(documents[0].metadata["subreddit"], "SaaS")
+        client.get.assert_called_once()
+        self.assertEqual(client.get.call_args.kwargs["headers"], {"User-Agent": "CompEyeAgentTest/0.1"})
 
     def test_metadata_hinted_evidence_extraction_supports_sparse_sources(self) -> None:
         document = RawDocument(
