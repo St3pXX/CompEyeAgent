@@ -145,13 +145,17 @@ p {
 .demo-layout {
   display: grid;
   grid-template-columns: 292px 1fr;
-  min-height: calc(100vh - 58px);
+  height: calc(100vh - 58px);
+  overflow: hidden;
 }
 
 .demo-sidebar {
   border-right: 1px solid var(--line);
   background: rgba(248, 250, 252, 0.78);
-  padding: 18px 14px;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 14px;
 }
 
 .new-chat-button {
@@ -167,7 +171,7 @@ p {
 }
 
 .sidebar-section {
-  margin-top: 22px;
+  margin-top: 16px;
 }
 
 .section-label,
@@ -188,8 +192,8 @@ p {
   background: rgba(255, 255, 255, 0.72);
   color: var(--ink);
   display: block;
-  margin-bottom: 10px;
-  padding: 12px;
+  margin-bottom: 8px;
+  padding: 10px;
   text-align: left;
 }
 
@@ -225,23 +229,25 @@ p {
 
 .chat-page {
   display: grid;
-  grid-template-rows: auto 1fr auto;
-  min-height: calc(100vh - 58px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .chat-hero {
-  padding: 54px 56px 18px;
+  padding: 18px 56px 12px;
   text-align: center;
 }
 
 .chat-hero h1 {
-  font-size: clamp(30px, 5vw, 48px);
-  line-height: 1.16;
+  font-size: 26px;
+  line-height: 1.2;
 }
 
 .chat-hero p {
-  margin-top: 12px;
-  font-size: 16px;
+  margin-top: 6px;
+  font-size: 13px;
 }
 
 .prompt-bar,
@@ -253,8 +259,8 @@ p {
 
 .prompt-bar {
   max-width: 780px;
-  height: 58px;
-  margin: 26px auto 0;
+  height: 46px;
+  margin: 12px auto 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -270,8 +276,8 @@ p {
 
 .prompt-bar textarea {
   flex: 1;
-  min-height: 42px;
-  max-height: 90px;
+  min-height: 32px;
+  max-height: 32px;
   resize: vertical;
   border: 0;
   outline: 0;
@@ -281,8 +287,8 @@ p {
 
 .prompt-bar button,
 .composer button {
-  width: 38px;
-  height: 38px;
+  width: 34px;
+  height: 34px;
   border: 0;
   border-radius: 12px;
   background: #172033;
@@ -301,14 +307,14 @@ button:disabled,
   justify-content: center;
   flex-wrap: wrap;
   gap: 10px;
-  margin-top: 18px;
+  margin-top: 10px;
 }
 
 .capability-row span {
   border: 1px solid var(--line);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.72);
-  padding: 8px 12px;
+  padding: 6px 12px;
   color: #30405a;
   font-size: 13px;
   font-weight: 700;
@@ -317,8 +323,11 @@ button:disabled,
 .chat-thread {
   display: grid;
   align-content: start;
-  gap: 14px;
-  padding: 18px 56px 20px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 10px;
+  padding: 10px 56px 12px;
 }
 
 .message {
@@ -326,7 +335,7 @@ button:disabled,
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.78);
-  padding: 16px 18px;
+  padding: 12px 16px;
 }
 
 .error-message {
@@ -347,15 +356,15 @@ button:disabled,
 .intent-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin-top: 12px;
+  gap: 8px;
+  margin-top: 10px;
 }
 
 .intent-grid div {
   border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--soft);
-  padding: 11px;
+  padding: 9px 10px;
 }
 
 .intent-grid b,
@@ -366,13 +375,13 @@ button:disabled,
 .brief-form {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
-  margin-top: 14px;
+  gap: 8px 10px;
+  margin-top: 10px;
 }
 
 .brief-form label {
   display: grid;
-  gap: 6px;
+  gap: 4px;
   color: var(--muted);
   font-size: 13px;
   font-weight: 760;
@@ -381,7 +390,7 @@ button:disabled,
 .brief-form input,
 .brief-form select {
   width: 100%;
-  min-height: 38px;
+  min-height: 34px;
   border: 1px solid var(--line);
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.88);
@@ -429,8 +438,8 @@ button:disabled,
 }
 
 .composer {
-  height: 54px;
-  margin: 0 56px 24px;
+  height: 48px;
+  margin: 0 56px 14px;
   display: flex;
   align-items: center;
   padding: 0 12px 0 18px;
@@ -733,21 +742,50 @@ button:disabled,
     padding: 0 14px;
   }
 
-  .chat-hero,
+  .chat-hero {
+    padding: 14px 18px 8px;
+  }
+
+  .chat-hero h1 {
+    font-size: 24px;
+  }
+
+  .chat-hero p {
+    display: none;
+  }
+
+  .prompt-bar {
+    height: 42px;
+    margin-top: 10px;
+  }
+
   .chat-thread {
-    padding-left: 18px;
-    padding-right: 18px;
+    gap: 8px;
+    padding: 8px 18px 10px;
   }
 
   .composer {
+    height: 44px;
     margin-left: 18px;
     margin-right: 18px;
+    margin-bottom: 10px;
   }
 
-  .intent-grid,
-  .result-message,
-  .brief-form {
+  .result-message {
     grid-template-columns: 1fr;
+  }
+
+  .brief-form {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .intent-grid {
+    display: none;
+  }
+
+  .message {
+    border-radius: 16px;
+    padding: 10px 14px;
   }
 
   .page-frame {
