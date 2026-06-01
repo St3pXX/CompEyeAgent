@@ -3,7 +3,10 @@ import type {
   ArtifactRecord,
   CreateRunRequest,
   CreateRunResponse,
+  DAGView,
+  InspectorSummary,
   RunDetailResponse,
+  ScratchpadItem,
   SourceRecord
 } from "./types";
 
@@ -49,6 +52,21 @@ export async function listSources(runId: string): Promise<SourceRecord[]> {
 export async function getArtifact(artifactId: string): Promise<ArtifactRecord> {
   const data = await request<{ artifact: ArtifactRecord }>(`/api/artifacts/${artifactId}`);
   return data.artifact;
+}
+
+export async function getRunDag(runId: string): Promise<DAGView> {
+  const data = await request<{ dag: DAGView }>(`/api/runs/${runId}/dag`);
+  return data.dag;
+}
+
+export async function listScratchpad(runId: string): Promise<ScratchpadItem[]> {
+  const data = await request<{ items: ScratchpadItem[] }>(`/api/runs/${runId}/scratchpad`);
+  return data.items;
+}
+
+export async function getRunInspector(runId: string): Promise<InspectorSummary> {
+  const data = await request<{ inspector: InspectorSummary }>(`/api/runs/${runId}/inspector`);
+  return data.inspector;
 }
 
 export function openRunEventStream(runId: string, afterEventId = 0): EventSource {

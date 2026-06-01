@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
-import { downloadTextFile, getRun, openRunEventStream } from "../api/client";
-import type { AgentEvent, ArtifactRecord, RunRecord, SourceRecord } from "../api/types";
+import { downloadTextFile, getRun, getRunDag, getRunInspector, listScratchpad, openRunEventStream } from "../api/client";
+import type { AgentEvent, ArtifactRecord, DAGView, InspectorSummary, RunRecord, ScratchpadItem, SourceRecord } from "../api/types";
 import { createMarkdownFilename, deriveStageStates, selectArtifacts } from "../utils/runData";
 
 const STREAM_EVENTS = [
@@ -24,6 +24,9 @@ export function DashboardPage() {
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [sources, setSources] = useState<SourceRecord[]>([]);
+  const [dag, setDag] = useState<DAGView | null>(null);
+  const [scratchpad, setScratchpad] = useState<ScratchpadItem[]>([]);
+  const [inspector, setInspector] = useState<InspectorSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [streamStatus, setStreamStatus] = useState("connecting");
 
@@ -35,10 +38,21 @@ export function DashboardPage() {
     setSources(detail.sources);
   }, [runId]);
 
+  const loadInspector = useCallback(async () => {
+    const [nextDag, nextScratchpad, nextInspector] = await Promise.all([
+      getRunDag(runId),
+      listScratchpad(runId),
+      getRunInspector(runId)
+    ]);
+    setDag(nextDag);
+    setScratchpad(nextScratchpad);
+    setInspector(nextInspector);
+  }, [runId]);
+
   useEffect(() => {
     setError(null);
-    loadRun().catch((err) => setError(err instanceof Error ? err.message : "加载 run 失败"));
-  }, [loadRun]);
+    Promise.all([loadRun(), loadInspector()]).catch((err) => setError(err instanceof Error ? err.message : "加载 run 失败"));
+  }, [loadInspector, loadRun]);
 
   useEffect(() => {
     const source = openRunEventStream(runId);
@@ -49,6 +63,7 @@ export function DashboardPage() {
       setEvents((current) => mergeEvents(current, event));
       if (event.type === "artifact.ready" || event.type === "run.completed") {
         loadRun().catch(() => undefined);
+        loadInspector().catch(() => undefined);
       }
     }
 
@@ -58,6 +73,7 @@ export function DashboardPage() {
       const payload = JSON.parse((message as MessageEvent<string>).data) as { status?: RunRecord["status"] };
       setRun((current) => current ? { ...current, status: payload.status ?? current.status } : current);
       loadRun().catch(() => undefined);
+      loadInspector().catch(() => undefined);
       source.close();
     });
     source.onerror = () => setStreamStatus("reconnecting");
@@ -66,7 +82,7 @@ export function DashboardPage() {
       STREAM_EVENTS.forEach((eventName) => source.removeEventListener(eventName, handleEvent));
       source.close();
     };
-  }, [loadRun, runId]);
+  }, [loadInspector, loadRun, runId]);
 
   const stages = useMemo(() => deriveStageStates(events), [events]);
   const selectedArtifacts = useMemo(() => selectArtifacts(artifacts), [artifacts]);
@@ -141,6 +157,56 @@ export function DashboardPage() {
           </div>
         </aside>
       </div>
+
+      <section className="inspector-section">
+        <div className="panel-card inspector-dag">
+          <div className="panel-heading">
+            <h2>Run Inspector</h2>
+            <span className="live-badge">{inspector?.dag.node_count ?? 0} nodes</span>
+          </div>
+          <div className="dag-node-list">
+            {(dag?.nodes ?? []).map((node) => (
+              <div className={`dag-node dag-${node.status}`} key={node.key}>
+                <div>
+                  <strong>{node.key}</strong>
+                  <p>{node.agent || "Coordinator"} · {node.name}</p>
+                </div>
+                <span>{node.status}</span>
+                <small>in: {node.input_refs.length ? node.input_refs.join(", ") : "none"}</small>
+                <small>out: {node.output_refs.length ? node.output_refs.join(", ") : "none"}</small>
+              </div>
+            ))}
+          </div>
+          <div className="edge-list">
+            {(dag?.edges ?? []).map((edge) => (
+              <span key={`${edge.source}-${edge.target}`}>{edge.source} → {edge.target}</span>
+            ))}
+          </div>
+        </div>
+
+        <aside className="panel-card inspector-scratchpad">
+          <h2>Scratchpad</h2>
+          <div className="run-summary">
+            <span>条目</span>
+            <strong>{inspector?.scratchpad.item_count ?? scratchpad.length}</strong>
+            <span>失败节点</span>
+            <strong>{inspector?.dag.status_counts.failed ?? 0}</strong>
+          </div>
+          <div className="scratchpad-list">
+            {scratchpad.length === 0 ? (
+              <p>暂无 Scratchpad 条目。</p>
+            ) : (
+              scratchpad.map((item) => (
+                <div className="scratchpad-item" key={item.item_id}>
+                  <strong>{item.path}</strong>
+                  <span>{item.kind}</span>
+                  <p>{item.content_preview || "无预览"}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </aside>
+      </section>
     </section>
   );
 }

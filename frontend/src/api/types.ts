@@ -55,6 +55,59 @@ export type SourceRecord = {
   retrieved_at?: string | null;
 };
 
+export type DAGNodeStatus = "pending" | "running" | "completed" | "failed" | "skipped";
+
+export type DAGNode = {
+  node_id: string;
+  run_id: string;
+  key: string;
+  name: string;
+  agent: string;
+  status: DAGNodeStatus;
+  depends_on: string[];
+  input_refs: string[];
+  output_refs: string[];
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DAGEdge = {
+  source: string;
+  target: string;
+};
+
+export type DAGView = {
+  run_id: string;
+  nodes: DAGNode[];
+  edges: DAGEdge[];
+};
+
+export type ScratchpadItem = {
+  item_id: string;
+  run_id: string;
+  path: string;
+  kind: "json" | "markdown" | "text";
+  content: string;
+  content_preview: string;
+  producer_node_id?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+};
+
+export type InspectorSummary = {
+  run_id: string;
+  dag: {
+    node_count: number;
+    status_counts: Record<string, number>;
+  };
+  scratchpad: {
+    item_count: number;
+    paths: string[];
+  };
+};
+
 export type CreateRunRequest = {
   input: CompetitorInput;
   allow_retry: boolean;
