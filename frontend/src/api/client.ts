@@ -69,6 +69,12 @@ export async function getRunInspector(runId: string): Promise<InspectorSummary> 
   return data.inspector;
 }
 
+export async function retryRunNode(runId: string, nodeKey: string): Promise<{ run: RunDetailResponse["run"]; node_key: string }> {
+  return request<{ run: RunDetailResponse["run"]; node_key: string }>(`/api/runs/${runId}/dag/${nodeKey}/retry`, {
+    method: "POST"
+  });
+}
+
 export function openRunEventStream(runId: string, afterEventId = 0): EventSource {
   return new EventSource(`${API_BASE}/sse/runs/${runId}?after_event_id=${afterEventId}`);
 }

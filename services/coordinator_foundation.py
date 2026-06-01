@@ -76,6 +76,27 @@ class CoordinatorFoundationService:
         nodes = {node.key: node for node in self.store.list_nodes(run_id)}
         if stage_key in nodes:
             self.store.update_node_status(run_id, stage_key, "failed")
+            self.mark_descendants_skipped(run_id, stage_key)
+
+    def mark_descendants_skipped(self, run_id: str, key: str) -> None:
+        nodes = {node.key: node for node in self.store.list_nodes(run_id)}
+        descendants = _descendant_keys(nodes, key)
+        for descendant in descendants:
+            if nodes[descendant].status in {"pending", "running"}:
+                self.store.update_node_status(run_id, descendant, "skipped")
+
+    def reset_node_for_retry(self, run_id: str, key: str) -> None:
+        nodes = {node.key: node for node in self.store.list_nodes(run_id)}
+        if key not in nodes:
+            raise KeyError(key)
+        retry_keys = [key, *_descendant_keys(nodes, key)]
+        for retry_key in retry_keys:
+            self.store.update_node_status(run_id, retry_key, "pending")
+            node = self.store.get_node(run_id, retry_key)
+            metadata = dict(node.metadata)
+            metadata.pop("last_error", None)
+            metadata["retry_attempts"] = 0
+            self.store.update_node_metadata(run_id, retry_key, metadata)
 
     def record_execution_outputs(
         self,
@@ -192,6 +213,9 @@ class CoordinatorFoundationService:
         except KeyError:
             return None
 
+    def update_node_metadata(self, run_id: str, key: str, metadata: dict[str, object]) -> DAGNode:
+        return self.store.update_node_metadata(run_id, key, metadata)
+
 
 def _edges_from_nodes(nodes: list[DAGNode]) -> list[DAGEdge]:
     edges: list[DAGEdge] = []
@@ -209,3 +233,17 @@ def _stage_to_node_key(stage: str) -> str | None:
     if stage in {"collect", "analyze", "write", "verify"}:
         return stage
     return None
+
+
+def _descendant_keys(nodes: dict[str, DAGNode], key: str) -> list[str]:
+    descendants: list[str] = []
+    pending = [key]
+    while pending:
+        parent = pending.pop(0)
+        for node in nodes.values():
+            if node.key in descendants:
+                continue
+            if parent in node.depends_on:
+                descendants.append(node.key)
+                pending.append(node.key)
+    return descendants

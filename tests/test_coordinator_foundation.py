@@ -10,6 +10,7 @@ import api_app
 from models.coordinator import ScratchpadWriteRequest
 from models.schema import CompetitorInput
 from services.coordinator_foundation import CoordinatorFoundationService
+from services.coordinator_loop import CoordinatorLoopService, NodeExecutionResult
 from services.run_service import RunService
 from storage.coordinator_store import SQLiteCoordinatorStore
 from storage.run_store import SQLiteRunStore
@@ -239,7 +240,91 @@ class CoordinatorFoundationTest(unittest.TestCase):
 
             statuses = {node.key: node.status for node in coordinator_store.list_nodes(run.run_id)}
             self.assertEqual(run_store.get_run(run.run_id).status, "failed")
-            self.assertEqual(statuses["verify"], "failed")
+            self.assertEqual(statuses["collect"], "failed")
+            self.assertEqual(statuses["analyze"], "skipped")
+            self.assertEqual(statuses["write"], "skipped")
+            self.assertEqual(statuses["verify"], "skipped")
+
+    def test_coordinator_loop_schedules_ready_nodes_in_dependency_order(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_store = SQLiteRunStore(Path(tmpdir) / "runs.sqlite3")
+            coordinator_store = SQLiteCoordinatorStore(Path(tmpdir) / "coordinator.sqlite3")
+            coordinator_service = CoordinatorFoundationService(coordinator_store)
+            loop = CoordinatorLoopService(run_store, coordinator_service)
+            run = run_store.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]).model_dump())
+            coordinator_service.ensure_default_dag(run.run_id, run.input.model_dump())
+            calls: list[str] = []
+            result = SimpleNamespace(
+                report="报告 [来源: https://example.com]",
+                verifier_result='{"passed": true, "confidence": 95, "issues": []}',
+                passed=True,
+                retried=False,
+                scratchpad_outputs={},
+            )
+
+            def node_executor(**kwargs: object) -> NodeExecutionResult:
+                node = kwargs["node"]
+                calls.append(node.key)
+                if node.key == "verify":
+                    return NodeExecutionResult(final_result=result)
+                return NodeExecutionResult(output_refs=[f"{node.key}/output.txt"], scratchpad_outputs={f"{node.key}/output.txt": node.key})
+
+            loop.execute(
+                run.run_id,
+                input_data=run.input,
+                allow_retry=True,
+                evidence_index="Evidence Index",
+                run_analysis=Mock(),
+                node_executor=node_executor,
+            )
+
+            statuses = {node.key: node.status for node in coordinator_store.list_nodes(run.run_id)}
+            self.assertEqual(calls, ["collect", "analyze", "write", "verify"])
+            self.assertEqual(statuses, {"collect": "completed", "analyze": "completed", "write": "completed", "verify": "completed"})
+            self.assertEqual(run_store.get_run(run.run_id).status, "passed")
+
+    def test_coordinator_loop_retries_failed_node_before_failing_run(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            run_store = SQLiteRunStore(Path(tmpdir) / "runs.sqlite3")
+            coordinator_store = SQLiteCoordinatorStore(Path(tmpdir) / "coordinator.sqlite3")
+            coordinator_service = CoordinatorFoundationService(coordinator_store)
+            loop = CoordinatorLoopService(run_store, coordinator_service)
+            run = run_store.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]).model_dump())
+            coordinator_service.ensure_default_dag(run.run_id, run.input.model_dump())
+            attempts = {"collect": 0}
+            result = SimpleNamespace(
+                report="报告 [来源: https://example.com]",
+                verifier_result='{"passed": true, "confidence": 95, "issues": []}',
+                passed=True,
+                retried=False,
+                scratchpad_outputs={},
+            )
+
+            def node_executor(**kwargs: object) -> NodeExecutionResult:
+                node = kwargs["node"]
+                if node.key == "collect":
+                    attempts["collect"] += 1
+                    if attempts["collect"] == 1:
+                        raise RuntimeError("temporary collect failure")
+                if node.key == "verify":
+                    return NodeExecutionResult(final_result=result)
+                return NodeExecutionResult()
+
+            loop.execute(
+                run.run_id,
+                input_data=run.input,
+                allow_retry=True,
+                evidence_index="Evidence Index",
+                run_analysis=Mock(),
+                node_executor=node_executor,
+            )
+
+            collect_node = coordinator_store.get_node(run.run_id, "collect")
+            retry_events = [event for event in run_store.list_events(run.run_id) if event.type == "agent.retrying"]
+            self.assertEqual(attempts["collect"], 2)
+            self.assertEqual(collect_node.metadata["retry_attempts"], 2)
+            self.assertEqual(len(retry_events), 1)
+            self.assertEqual(run_store.get_run(run.run_id).status, "passed")
 
     def test_cancelled_run_does_not_enter_coordinator_loop(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

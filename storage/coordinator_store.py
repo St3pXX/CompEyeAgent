@@ -125,6 +125,24 @@ class SQLiteCoordinatorStore:
             )
         return self.get_node(run_id, key)
 
+    def update_node_metadata(self, run_id: str, key: str, metadata: dict[str, object]) -> DAGNode:
+        now = utc_now()
+        with self._connection() as conn:
+            row = conn.execute("SELECT * FROM dag_nodes WHERE run_id = ? AND key = ?", (run_id, key)).fetchone()
+            if row is None:
+                raise KeyError(key)
+            current = json.loads(row["metadata_json"])
+            current.update(metadata)
+            conn.execute(
+                """
+                UPDATE dag_nodes
+                SET metadata_json = ?, updated_at = ?
+                WHERE run_id = ? AND key = ?
+                """,
+                (json.dumps(current, ensure_ascii=False), now, run_id, key),
+            )
+        return self.get_node(run_id, key)
+
     def write_scratchpad_item(self, item: ScratchpadItem) -> ScratchpadItem:
         item.content_preview = item.content[:600]
         item.updated_at = utc_now()

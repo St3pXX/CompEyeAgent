@@ -61,6 +61,7 @@ EventType = Literal[
     "agent.started",
     "agent.progress",
     "agent.completed",
+    "agent.retrying",
     "verifier.issue",
     "artifact.ready",
     "run.completed",

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from typing import Any
 
+from models.coordinator import DAGNode
 from models.schema import CompetitorInput
 from services.coordinator_foundation import CoordinatorFoundationService
 from services.source_indexer import extract_source_references
@@ -20,6 +22,13 @@ STAGE_AGENT = {
     "rewrite": "Writer",
     "final": "Coordinator",
 }
+
+
+@dataclass
+class NodeExecutionResult:
+    output_refs: list[str] = field(default_factory=list)
+    scratchpad_outputs: dict[str, str] = field(default_factory=dict)
+    final_result: Any | None = None
 
 
 class CoordinatorLoopService:
@@ -37,6 +46,7 @@ class CoordinatorLoopService:
         allow_retry: bool,
         evidence_index: str,
         run_analysis: Callable[..., Any],
+        node_executor: Callable[..., NodeExecutionResult] | None = None,
     ) -> None:
         run = self.run_store.get_run(run_id)
         if run.status == "cancelled":
@@ -46,6 +56,186 @@ class CoordinatorLoopService:
         self.run_store.update_run_status(run_id, "running")
         self.run_store.append_event(run_id, "run.started", "Coordinator 主循环开始执行", agent="Coordinator")
 
+        try:
+            result = self._execute_dag(
+                run_id,
+                input_data=input_data,
+                allow_retry=allow_retry,
+                evidence_index=evidence_index,
+                run_analysis=run_analysis,
+                node_executor=node_executor,
+            )
+            self._persist_success(run_id, input_data, result)
+        except Exception as exc:
+            self.run_store.update_run_status(run_id, "failed", error=str(exc), completed=True)
+            self.run_store.append_event(
+                run_id,
+                "run.failed",
+                f"Coordinator 主循环执行失败：{exc}",
+                agent="Coordinator",
+                payload={"error_type": type(exc).__name__},
+            )
+
+    def retry_node(
+        self,
+        run_id: str,
+        node_key: str,
+        *,
+        input_data: CompetitorInput,
+        allow_retry: bool,
+        evidence_index: str,
+        run_analysis: Callable[..., Any],
+        node_executor: Callable[..., NodeExecutionResult] | None = None,
+    ) -> None:
+        self.run_store.get_run(run_id)
+        self.foundation.reset_node_for_retry(run_id, node_key)
+        self.run_store.update_run_status(run_id, "running")
+        self.run_store.append_event(
+            run_id,
+            "agent.retrying",
+            f"正在重试 DAG 节点：{node_key}",
+            agent="Coordinator",
+            stage=node_key,
+        )
+        self.execute(
+            run_id,
+            input_data=input_data,
+            allow_retry=allow_retry,
+            evidence_index=evidence_index,
+            run_analysis=run_analysis,
+            node_executor=node_executor,
+        )
+
+    def _execute_dag(
+        self,
+        run_id: str,
+        *,
+        input_data: CompetitorInput,
+        allow_retry: bool,
+        evidence_index: str,
+        run_analysis: Callable[..., Any],
+        node_executor: Callable[..., NodeExecutionResult] | None,
+    ) -> Any:
+        executor = node_executor or self._legacy_chain_node_executor(run_analysis)
+        context: dict[str, Any] = {
+            "input_data": input_data,
+            "allow_retry": allow_retry,
+            "evidence_index": evidence_index,
+            "final_result": None,
+        }
+
+        while True:
+            run = self.run_store.get_run(run_id)
+            if run.status == "cancelled":
+                raise RuntimeError("Run was cancelled")
+
+            nodes = self.foundation.get_dag(run_id).nodes
+            failed = [node for node in nodes if node.status == "failed"]
+            if failed:
+                raise RuntimeError(f"DAG node failed: {failed[0].key}")
+
+            if all(node.status in {"completed", "skipped"} for node in nodes):
+                result = context.get("final_result")
+                if result is None:
+                    raise RuntimeError("DAG completed without final result")
+                return result
+
+            ready = _ready_nodes(nodes)
+            if not ready:
+                raise RuntimeError("No runnable DAG node found")
+
+            for node in ready:
+                result = self._execute_node_with_retry(run_id, node, executor, context)
+                if result.final_result is not None:
+                    context["final_result"] = result.final_result
+
+    def _execute_node_with_retry(
+        self,
+        run_id: str,
+        node: DAGNode,
+        executor: Callable[..., NodeExecutionResult],
+        context: dict[str, Any],
+    ) -> NodeExecutionResult:
+        max_retries = int(node.metadata.get("max_retries", 1))
+        attempts = int(node.metadata.get("retry_attempts", 0))
+        while True:
+            attempts += 1
+            self.foundation.update_node_metadata(run_id, node.key, {"retry_attempts": attempts})
+            self.foundation.store.update_node_status(run_id, node.key, "running")
+            self.run_store.append_event(
+                run_id,
+                "agent.started",
+                f"{node.agent or node.key} 节点开始执行",
+                agent=node.agent or STAGE_AGENT.get(node.key, "Agent"),
+                stage=node.key,
+                payload={"attempt": attempts, "max_retries": max_retries},
+            )
+            try:
+                result = executor(run_id=run_id, node=node, context=context, progress_callback=self._progress_callback(run_id))
+                self.foundation.record_stage_outputs(run_id, result.scratchpad_outputs)
+                if result.output_refs:
+                    current = self.foundation.store.get_node(run_id, node.key)
+                    output_refs = [*current.output_refs]
+                    for ref in result.output_refs:
+                        if ref not in output_refs:
+                            output_refs.append(ref)
+                    self.foundation.store.update_node_refs(run_id, node.key, output_refs=output_refs)
+                self.foundation.store.update_node_status(run_id, node.key, "completed")
+                self.run_store.append_event(
+                    run_id,
+                    "agent.completed",
+                    f"{node.agent or node.key} 节点执行完成",
+                    agent=node.agent or STAGE_AGENT.get(node.key, "Agent"),
+                    stage=node.key,
+                    payload={"attempt": attempts},
+                )
+                return result
+            except Exception as exc:
+                self.foundation.update_node_metadata(run_id, node.key, {"last_error": str(exc)})
+                if attempts <= max_retries:
+                    self.run_store.append_event(
+                        run_id,
+                        "agent.retrying",
+                        f"{node.agent or node.key} 节点失败，准备第 {attempts + 1} 次尝试：{exc}",
+                        agent=node.agent or STAGE_AGENT.get(node.key, "Agent"),
+                        stage=node.key,
+                        payload={"attempt": attempts, "max_retries": max_retries, "error": str(exc)},
+                    )
+                    continue
+                self.foundation.mark_run_failed(run_id, node.key)
+                raise
+
+    def _legacy_chain_node_executor(self, run_analysis: Callable[..., Any]) -> Callable[..., NodeExecutionResult]:
+        def execute_legacy_chain(
+            *,
+            run_id: str,
+            node: DAGNode,
+            context: dict[str, Any],
+            progress_callback: Callable[[str, str], None],
+        ) -> NodeExecutionResult:
+            if node.key != "collect":
+                return NodeExecutionResult()
+
+            input_data: CompetitorInput = context["input_data"]
+            run_inputs = input_data.model_dump()
+            run_inputs.setdefault("evidenceIndex", context["evidence_index"])
+            result = run_analysis(
+                run_inputs,
+                allow_retry=context["allow_retry"],
+                progress_callback=progress_callback,
+            )
+            scratchpad_outputs = getattr(result, "scratchpad_outputs", {})
+            for completed_key in ("collect", "analyze", "write", "verify"):
+                self.foundation.store.update_node_status(run_id, completed_key, "completed")
+            return NodeExecutionResult(
+                output_refs=_refs_for_node("collect", scratchpad_outputs),
+                scratchpad_outputs=scratchpad_outputs,
+                final_result=result,
+            )
+
+        return execute_legacy_chain
+
+    def _progress_callback(self, run_id: str) -> Callable[[str, str], None]:
         def progress_callback(stage: str, message: str) -> None:
             self.foundation.mark_stage_running(run_id, stage)
             self.run_store.append_event(
@@ -56,25 +246,7 @@ class CoordinatorLoopService:
                 stage=stage,
             )
 
-        try:
-            run_inputs = input_data.model_dump()
-            run_inputs.setdefault("evidenceIndex", evidence_index)
-            result = run_analysis(
-                run_inputs,
-                allow_retry=allow_retry,
-                progress_callback=progress_callback,
-            )
-            self._persist_success(run_id, input_data, result)
-        except Exception as exc:
-            self.run_store.update_run_status(run_id, "failed", error=str(exc), completed=True)
-            self.foundation.mark_run_failed(run_id)
-            self.run_store.append_event(
-                run_id,
-                "run.failed",
-                f"Coordinator 主循环执行失败：{exc}",
-                agent="Coordinator",
-                payload={"error_type": type(exc).__name__},
-            )
+        return progress_callback
 
     def _persist_success(self, run_id: str, input_data: CompetitorInput, result: Any) -> None:
         status = "passed" if result.passed else "needs_review"
@@ -108,3 +280,28 @@ class CoordinatorLoopService:
             agent="Coordinator",
             payload={"status": status},
         )
+
+
+def _ready_nodes(nodes: list[DAGNode]) -> list[DAGNode]:
+    by_key = {node.key: node for node in nodes}
+    ready: list[DAGNode] = []
+    for node in nodes:
+        if node.status != "pending":
+            continue
+        if all(by_key[dependency].status == "completed" for dependency in node.depends_on if dependency in by_key):
+            ready.append(node)
+    return ready
+
+
+def _refs_for_node(node_key: str, scratchpad_outputs: dict[str, str]) -> list[str]:
+    if node_key == "collect":
+        prefixes = ("collect/",)
+    elif node_key == "analyze":
+        prefixes = ("analyze/",)
+    elif node_key == "write":
+        prefixes = ("write/",)
+    elif node_key == "verify":
+        prefixes = ("verify/",)
+    else:
+        prefixes = ()
+    return [path for path, content in scratchpad_outputs.items() if content and path.startswith(prefixes)]

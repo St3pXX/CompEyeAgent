@@ -149,6 +149,17 @@ def retry_run(run_id: str, background_tasks: BackgroundTasks) -> CreateRunRespon
         raise HTTPException(status_code=404, detail="Run not found") from None
 
 
+@app.post("/api/runs/{run_id}/dag/{node_key}/retry", status_code=202)
+def retry_run_node(run_id: str, node_key: str, background_tasks: BackgroundTasks) -> dict[str, object]:
+    try:
+        run = store.get_run(run_id)
+        coordinator_store.get_node(run_id, node_key)
+        background_tasks.add_task(run_service.retry_node, run_id, node_key, allow_retry=True)
+        return {"run": run, "node_key": node_key}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run or DAG node not found") from None
+
+
 @app.get("/api/runs/{run_id}/dag")
 def get_run_dag(run_id: str) -> dict[str, object]:
     try:

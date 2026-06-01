@@ -124,6 +124,23 @@ class RunService:
         )
         return retry
 
+    def retry_node(self, run_id: str, node_key: str, *, allow_retry: bool = True) -> RunRecord:
+        run = self.store.get_run(run_id)
+        if self.coordinator_loop is None:
+            raise RuntimeError("Coordinator loop is not configured")
+
+        from runner import run_analysis
+
+        self.coordinator_loop.retry_node(
+            run_id,
+            node_key,
+            input_data=run.input,
+            allow_retry=allow_retry,
+            evidence_index=self._evidence_index_for_input(run.input),
+            run_analysis=run_analysis,
+        )
+        return self.store.get_run(run_id)
+
     def cancel_run(self, run_id: str) -> RunRecord:
         run = self.store.update_run_status(run_id, "cancelled", completed=True)
         self.store.append_event(run_id, "run.cancelled", "分析任务已标记为取消", agent="Coordinator")
