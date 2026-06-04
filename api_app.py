@@ -19,6 +19,7 @@ from models.schema import CreateRunRequest, CreateRunResponse, RunDetailResponse
 from models.source_layer import SourceSeed
 from services.coordinator_foundation import CoordinatorFoundationService
 from services.evidence_service import EvidenceService
+from services.event_bus import EventBus
 from services.run_service import RunService
 from storage.coordinator_store import SQLiteCoordinatorStore
 from storage.run_store import SQLiteRunStore, TERMINAL_STATUSES
@@ -31,6 +32,7 @@ coordinator_service = CoordinatorFoundationService(coordinator_store)
 source_store = SQLiteSourceStore()
 evidence_service = EvidenceService(source_store)
 run_service = RunService(store, evidence_service=evidence_service, coordinator_service=coordinator_service)
+event_bus = EventBus()
 FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"
 
@@ -60,7 +62,8 @@ def health() -> dict[str, str]:
 @app.post("/api/runs", response_model=CreateRunResponse, status_code=202)
 def create_run(request: CreateRunRequest, background_tasks: BackgroundTasks) -> CreateRunResponse:
     run = run_service.create_run(request.input, allow_retry=request.allow_retry)
-    background_tasks.add_task(run_service.execute_run, run.run_id, allow_retry=request.allow_retry)
+    event_bus.create(run.run_id)
+    background_tasks.add_task(run_service.execute_run, run.run_id, allow_retry=request.allow_retry, event_bus=event_bus)
     return CreateRunResponse(run=run)
 
 
@@ -143,7 +146,8 @@ def cancel_run(run_id: str) -> dict[str, object]:
 def retry_run(run_id: str, background_tasks: BackgroundTasks) -> CreateRunResponse:
     try:
         retry = run_service.retry_run(run_id)
-        background_tasks.add_task(run_service.execute_run, retry.run_id, allow_retry=True)
+        event_bus.create(retry.run_id)
+        background_tasks.add_task(run_service.execute_run, retry.run_id, allow_retry=True, event_bus=event_bus)
         return CreateRunResponse(run=retry)
     except KeyError:
         raise HTTPException(status_code=404, detail="Run not found") from None
@@ -154,7 +158,8 @@ def retry_run_node(run_id: str, node_key: str, background_tasks: BackgroundTasks
     try:
         run = store.get_run(run_id)
         coordinator_store.get_node(run_id, node_key)
-        background_tasks.add_task(run_service.retry_node, run_id, node_key, allow_retry=True)
+        event_bus.create(run_id)
+        background_tasks.add_task(run_service.retry_node, run_id, node_key, allow_retry=True, event_bus=event_bus)
         return {"run": run, "node_key": node_key}
     except KeyError:
         raise HTTPException(status_code=404, detail="Run or DAG node not found") from None
@@ -240,17 +245,70 @@ def serve_frontend_route(path: str) -> FileResponse:
 
 async def _event_stream(run_id: str, after_event_id: int) -> AsyncIterator[str]:
     last_event_id = after_event_id
+
+    # Phase 1: drain any events already persisted to SQLite.
+    for event in store.list_events(run_id, after_event_id=last_event_id):
+        last_event_id = event.event_id
+        yield _sse(event.type, event.model_dump(), event_id=event.event_id)
+
+    # Check if the run already finished before we started streaming.
+    run = store.get_run(run_id)
+    if run.status in TERMINAL_STATUSES:
+        yield _sse("stream.closed", {"run_id": run_id, "status": run.status})
+        return
+
+    # Phase 2: prefer in-memory event queue (push-based, zero polling).
+    queue = event_bus.get_queue(run_id)
+    if queue is not None:
+        async for event_dict in _queue_stream(run_id, queue):
+            if event_dict is None:
+                run = store.get_run(run_id)
+                yield _sse("stream.closed", {"run_id": run_id, "status": run.status})
+                return
+            eid = event_dict.get("event_id")
+            yield _sse(event_dict["type"], event_dict, event_id=eid)
+    else:
+        # Fallback: legacy SQLite polling (for runs started before this server).
+        async for event_dict in _polling_stream(run_id, last_event_id):
+            if event_dict is None:
+                run = store.get_run(run_id)
+                yield _sse("stream.closed", {"run_id": run_id, "status": run.status})
+                return
+            if event_dict.get("_heartbeat"):
+                yield ": heartbeat\n\n"
+            else:
+                eid = event_dict.get("event_id")
+                yield _sse(event_dict["type"], event_dict, event_id=eid)
+
+
+async def _queue_stream(
+    run_id: str, queue: asyncio.Queue[dict[str, object] | None],
+) -> AsyncIterator[dict[str, object] | None]:
+    """Push-based stream: await the in-memory queue."""
+    try:
+        while True:
+            event_dict = await queue.get()
+            yield event_dict
+            if event_dict is None:
+                return
+    finally:
+        event_bus.discard(run_id)
+
+
+async def _polling_stream(run_id: str, after_event_id: int) -> AsyncIterator[dict[str, object] | None]:
+    """Fallback polling stream for runs without an in-memory queue."""
+    last_event_id = after_event_id
     while True:
         for event in store.list_events(run_id, after_event_id=last_event_id):
             last_event_id = event.event_id
-            yield _sse(event.type, event.model_dump(), event_id=event.event_id)
+            yield event.model_dump()
 
         run = store.get_run(run_id)
         if run.status in TERMINAL_STATUSES:
-            yield _sse("stream.closed", {"run_id": run_id, "status": run.status})
-            break
+            yield None
+            return
 
-        yield ": heartbeat\n\n"
+        yield {"_heartbeat": True}
         await asyncio.sleep(1)
 
 

@@ -9,6 +9,7 @@ from models.schema import CompetitorInput, RunRecord
 from services.coordinator_foundation import CoordinatorFoundationService
 from services.coordinator_loop import CoordinatorLoopService
 from services.evidence_service import DEFAULT_EVIDENCE_INDEX, EvidenceService
+from services.event_bus import EventBus
 from services.source_indexer import extract_source_references
 from storage.run_store import SQLiteRunStore
 
@@ -48,17 +49,19 @@ class RunService:
         )
         return run
 
-    def execute_run(self, run_id: str, *, allow_retry: bool = True) -> None:
+    def execute_run(self, run_id: str, *, allow_retry: bool = True, event_bus: EventBus | None = None) -> None:
         run = self.store.get_run(run_id)
         from runner import run_analysis
 
         if self.coordinator_loop is not None:
-            self._execute_with_coordinator(run_id, run, allow_retry, run_analysis)
+            self._execute_with_coordinator(run_id, run, allow_retry, run_analysis, event_bus=event_bus)
             return
 
         self._execute_legacy(run_id, allow_retry=allow_retry, run_analysis=run_analysis)
 
-    def _execute_with_coordinator(self, run_id: str, run: RunRecord, allow_retry: bool, run_analysis: Any) -> None:
+    def _execute_with_coordinator(
+        self, run_id: str, run: RunRecord, allow_retry: bool, run_analysis: Any, *, event_bus: EventBus | None = None,
+    ) -> None:
         from services.node_executors import per_node_executor
 
         self.coordinator_loop.execute(
@@ -68,6 +71,7 @@ class RunService:
             evidence_index=self._evidence_index_for_input(run.input),
             run_analysis=run_analysis,
             node_executor=per_node_executor,
+            event_bus=event_bus,
         )
 
     def _execute_legacy(self, run_id: str, *, allow_retry: bool, run_analysis: Any) -> None:
@@ -130,7 +134,7 @@ class RunService:
         )
         return retry
 
-    def retry_node(self, run_id: str, node_key: str, *, allow_retry: bool = True) -> RunRecord:
+    def retry_node(self, run_id: str, node_key: str, *, allow_retry: bool = True, event_bus: EventBus | None = None) -> RunRecord:
         run = self.store.get_run(run_id)
         if self.coordinator_loop is None:
             raise RuntimeError("Coordinator loop is not configured")
@@ -146,6 +150,7 @@ class RunService:
             evidence_index=self._evidence_index_for_input(run.input),
             run_analysis=run_analysis,
             node_executor=per_node_executor,
+            event_bus=event_bus,
         )
         return self.store.get_run(run_id)
 

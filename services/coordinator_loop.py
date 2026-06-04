@@ -9,6 +9,7 @@ from typing import Any
 from models.coordinator import AssembledResult, DAGNode, NodeExecutionResult
 from models.schema import CompetitorInput
 from services.coordinator_foundation import CoordinatorFoundationService
+from services.event_bus import EventBus
 from services.source_indexer import extract_source_references
 from services.verification import verification_issues
 from storage.run_store import SQLiteRunStore
@@ -30,6 +31,31 @@ class CoordinatorLoopService:
     def __init__(self, run_store: SQLiteRunStore, foundation: CoordinatorFoundationService) -> None:
         self.run_store = run_store
         self.foundation = foundation
+        self._event_bus: EventBus | None = None
+
+    def _emit(
+        self,
+        run_id: str,
+        event_type: str,
+        message: str,
+        *,
+        agent: str | None = None,
+        stage: str | None = None,
+        payload: dict[str, Any] | None = None,
+    ) -> None:
+        """Dual-write: persist to SQLite, then push to in-memory event bus."""
+        stored = self.run_store.append_event(run_id, event_type, message, agent=agent, stage=stage, payload=payload)
+        if self._event_bus is not None:
+            self._event_bus.publish(run_id, {
+                "event_id": stored.event_id,
+                "run_id": run_id,
+                "type": event_type,
+                "agent": agent,
+                "stage": stage,
+                "message": message,
+                "payload": payload or {},
+                "created_at": stored.created_at,
+            })
 
     def execute(
         self,
@@ -40,14 +66,16 @@ class CoordinatorLoopService:
         evidence_index: str,
         run_analysis: Callable[..., Any],
         node_executor: Callable[..., NodeExecutionResult] | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         run = self.run_store.get_run(run_id)
         if run.status == "cancelled":
             return
 
+        self._event_bus = event_bus
         self.foundation.ensure_default_dag(run_id, input_data.model_dump())
         self.run_store.update_run_status(run_id, "running")
-        self.run_store.append_event(run_id, "run.started", "Coordinator 主循环开始执行", agent="Coordinator")
+        self._emit(run_id, "run.started", "Coordinator 主循环开始执行", agent="Coordinator")
 
         try:
             result = self._execute_dag(
@@ -61,13 +89,16 @@ class CoordinatorLoopService:
             self._persist_success(run_id, input_data, result)
         except Exception as exc:
             self.run_store.update_run_status(run_id, "failed", error=str(exc), completed=True)
-            self.run_store.append_event(
+            self._emit(
                 run_id,
                 "run.failed",
                 f"Coordinator 主循环执行失败：{exc}",
                 agent="Coordinator",
                 payload={"error_type": type(exc).__name__},
             )
+        finally:
+            if self._event_bus is not None:
+                self._event_bus.close(run_id)
 
     def retry_node(
         self,
@@ -79,11 +110,12 @@ class CoordinatorLoopService:
         evidence_index: str,
         run_analysis: Callable[..., Any],
         node_executor: Callable[..., NodeExecutionResult] | None = None,
+        event_bus: EventBus | None = None,
     ) -> None:
         self.run_store.get_run(run_id)
         self.foundation.reset_node_for_retry(run_id, node_key)
         self.run_store.update_run_status(run_id, "running")
-        self.run_store.append_event(
+        self._emit(
             run_id,
             "agent.retrying",
             f"正在重试 DAG 节点：{node_key}",
@@ -97,6 +129,7 @@ class CoordinatorLoopService:
             evidence_index=evidence_index,
             run_analysis=run_analysis,
             node_executor=node_executor,
+            event_bus=event_bus,
         )
 
     def _execute_dag(
@@ -157,7 +190,7 @@ class CoordinatorLoopService:
             attempts += 1
             self.foundation.update_node_metadata(run_id, node.key, {"retry_attempts": attempts})
             self.foundation.store.update_node_status(run_id, node.key, "running")
-            self.run_store.append_event(
+            self._emit(
                 run_id,
                 "agent.started",
                 f"{node.agent or node.key} 节点开始执行",
@@ -182,7 +215,7 @@ class CoordinatorLoopService:
                             output_refs.append(ref)
                     self.foundation.store.update_node_refs(run_id, node.key, output_refs=output_refs)
                 self.foundation.store.update_node_status(run_id, node.key, "completed")
-                self.run_store.append_event(
+                self._emit(
                     run_id,
                     "agent.completed",
                     f"{node.agent or node.key} 节点执行完成",
@@ -194,7 +227,7 @@ class CoordinatorLoopService:
             except Exception as exc:
                 self.foundation.update_node_metadata(run_id, node.key, {"last_error": str(exc)})
                 if attempts <= max_retries:
-                    self.run_store.append_event(
+                    self._emit(
                         run_id,
                         "agent.retrying",
                         f"{node.agent or node.key} 节点失败，准备第 {attempts + 1} 次尝试：{exc}",
@@ -239,7 +272,7 @@ class CoordinatorLoopService:
     def _progress_callback(self, run_id: str) -> Callable[[str, str], None]:
         def progress_callback(stage: str, message: str) -> None:
             self.foundation.mark_stage_running(run_id, stage)
-            self.run_store.append_event(
+            self._emit(
                 run_id,
                 "agent.progress",
                 message,
@@ -291,7 +324,7 @@ class CoordinatorLoopService:
             provenance_json=provenance_index,
             stage_outputs=getattr(result, "scratchpad_outputs", {}),
         )
-        self.run_store.append_event(
+        self._emit(
             run_id,
             "artifact.ready",
             "报告、质检结果和 Scratchpad 产物已生成",
@@ -300,7 +333,7 @@ class CoordinatorLoopService:
         )
         self.run_store.update_run_status(run_id, status, completed=True)
         self.foundation.mark_run_finished(run_id, passed=result.passed)
-        self.run_store.append_event(
+        self._emit(
             run_id,
             "run.completed",
             "分析任务已完成" if result.passed else "分析任务完成，但需要复核",
