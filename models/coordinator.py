@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any, Literal
 
@@ -64,3 +65,21 @@ class ScratchpadWriteRequest(BaseModel):
     content: str
     producer_node_id: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+@dataclass
+class NodeExecutionResult:
+    """Return type from a single DAG node executor."""
+    output_refs: list[str] = field(default_factory=list)
+    scratchpad_outputs: dict[str, str] = field(default_factory=dict)
+    final_result: Any | None = None
+
+
+@dataclass
+class AssembledResult:
+    """Result assembled from scratchpad after all DAG nodes complete."""
+    report: str
+    verifier_result: str
+    passed: bool
+    retried: bool = False
+    scratchpad_outputs: dict[str, str] = field(default_factory=dict)

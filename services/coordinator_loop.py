@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
-from dataclasses import dataclass, field
 from typing import Any
 
-from models.coordinator import DAGNode
+from models.coordinator import AssembledResult, DAGNode, NodeExecutionResult
 from models.schema import CompetitorInput
 from services.coordinator_foundation import CoordinatorFoundationService
 from services.source_indexer import extract_source_references
+from services.verification import verification_issues
 from storage.run_store import SQLiteRunStore
 
 
@@ -22,13 +22,6 @@ STAGE_AGENT = {
     "rewrite": "Writer",
     "final": "Coordinator",
 }
-
-
-@dataclass
-class NodeExecutionResult:
-    output_refs: list[str] = field(default_factory=list)
-    scratchpad_outputs: dict[str, str] = field(default_factory=dict)
-    final_result: Any | None = None
 
 
 class CoordinatorLoopService:
@@ -135,10 +128,12 @@ class CoordinatorLoopService:
                 raise RuntimeError(f"DAG node failed: {failed[0].key}")
 
             if all(node.status in {"completed", "skipped"} for node in nodes):
+                # If executor already set final_result (legacy path), use it.
                 result = context.get("final_result")
-                if result is None:
-                    raise RuntimeError("DAG completed without final result")
-                return result
+                if result is not None:
+                    return result
+                # Per-node path: assemble result from scratchpad items.
+                return self._assemble_from_scratchpad(run_id, input_data)
 
             ready = _ready_nodes(nodes)
             if not ready:
@@ -171,7 +166,13 @@ class CoordinatorLoopService:
                 payload={"attempt": attempts, "max_retries": max_retries},
             )
             try:
-                result = executor(run_id=run_id, node=node, context=context, progress_callback=self._progress_callback(run_id))
+                result = executor(
+                    run_id=run_id,
+                    node=node,
+                    context=context,
+                    progress_callback=self._progress_callback(run_id),
+                    foundation=self.foundation,
+                )
                 self.foundation.record_stage_outputs(run_id, result.scratchpad_outputs)
                 if result.output_refs:
                     current = self.foundation.store.get_node(run_id, node.key)
@@ -247,6 +248,32 @@ class CoordinatorLoopService:
             )
 
         return progress_callback
+
+    def _read_scratchpad(self, run_id: str, path: str) -> str:
+        """Read a single scratchpad item by path, returning empty string if missing."""
+        try:
+            item = self.foundation.store.get_scratchpad_item(run_id, path)
+            return item.content
+        except Exception:
+            return ""
+
+    def _assemble_from_scratchpad(self, run_id: str, input_data: CompetitorInput) -> AssembledResult:
+        """Build an AssembledResult from scratchpad items after per-node execution."""
+        report = self._read_scratchpad(run_id, "write/report.md")
+        verifier_result = self._read_scratchpad(run_id, "verify/verifier.json")
+        issues = verification_issues(report, verifier_result) if report else ["报告内容为空"]
+        return AssembledResult(
+            report=report,
+            verifier_result=verifier_result,
+            passed=not issues,
+            retried=False,
+            scratchpad_outputs={
+                "collect/raw.json": self._read_scratchpad(run_id, "collect/raw.json"),
+                "analyze/findings.json": self._read_scratchpad(run_id, "analyze/findings.json"),
+                "write/report.md": report,
+                "verify/verifier.json": verifier_result,
+            },
+        )
 
     def _persist_success(self, run_id: str, input_data: CompetitorInput, result: Any) -> None:
         status = "passed" if result.passed else "needs_review"

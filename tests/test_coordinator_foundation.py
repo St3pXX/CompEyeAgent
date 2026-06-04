@@ -7,10 +7,10 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 import api_app
-from models.coordinator import ScratchpadWriteRequest
+from models.coordinator import NodeExecutionResult, ScratchpadWriteRequest
 from models.schema import CompetitorInput
 from services.coordinator_foundation import CoordinatorFoundationService
-from services.coordinator_loop import CoordinatorLoopService, NodeExecutionResult
+from services.coordinator_loop import CoordinatorLoopService
 from services.run_service import RunService
 from storage.coordinator_store import SQLiteCoordinatorStore
 from storage.run_store import SQLiteRunStore
@@ -164,20 +164,26 @@ class CoordinatorFoundationTest(unittest.TestCase):
             coordinator_service = CoordinatorFoundationService(coordinator_store)
             service = RunService(run_store, coordinator_service=coordinator_service)
             run = service.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]))
-            result = SimpleNamespace(
-                report="报告 [来源: https://example.com]",
-                verifier_result='{"passed": true, "confidence": 95, "issues": []}',
-                passed=True,
-                retried=False,
-                scratchpad_outputs={
-                    "collect/raw.json": '[{"competitor": "钉钉"}]',
-                    "analyze/findings.json": '[{"dimension": "定价"}]',
-                },
-            )
-            run_analysis = Mock(return_value=result)
-            fake_runner = SimpleNamespace(run_analysis=run_analysis)
 
-            with patch.dict("sys.modules", {"runner": fake_runner}):
+            report = (
+                "## 竞品分析报告\n\n"
+                "- 钉钉定价更灵活 [来源: https://example.com]\n\n"
+                "## Provenance 索引\n"
+                "| 来源 | URL |\n|------|-----|\n| 官网 | https://example.com |"
+            )
+            verifier = '{"passed": true, "confidence": 95, "issues": []}'
+
+            # Mock per_node_executor to return scratchpad outputs for each node
+            def fake_executor(*, run_id, node, context, progress_callback, foundation, **kw):
+                outputs = {
+                    "collect": {"collect/raw.json": '[{"competitor": "钉钉"}]'},
+                    "analyze": {"analyze/findings.json": '[{"dimension": "定价"}]'},
+                    "write": {"write/report.md": report},
+                    "verify": {"verify/verifier.json": verifier},
+                }
+                return NodeExecutionResult(scratchpad_outputs=outputs.get(node.key, {}))
+
+            with patch("services.node_executors.per_node_executor", side_effect=fake_executor):
                 service.execute_run(run.run_id)
 
             paths = {item.path for item in coordinator_service.list_scratchpad(run.run_id)}
@@ -205,17 +211,24 @@ class CoordinatorFoundationTest(unittest.TestCase):
             coordinator_service = CoordinatorFoundationService(coordinator_store)
             service = RunService(run_store, coordinator_service=coordinator_service)
             run = service.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]))
-            result = SimpleNamespace(
-                report="报告 [来源: https://example.com]",
-                verifier_result='{"passed": true, "confidence": 95, "issues": []}',
-                passed=True,
-                retried=False,
-                scratchpad_outputs={"collect/raw.json": "[]"},
-            )
-            run_analysis = Mock(return_value=result)
-            fake_runner = SimpleNamespace(run_analysis=run_analysis)
 
-            with patch.dict("sys.modules", {"runner": fake_runner}):
+            report = (
+                "## 竞品分析报告\n\n"
+                "- 钉钉定价更灵活，支持免费套餐 [来源: https://example.com]\n\n"
+                "## Provenance 索引\n"
+                "| 来源 | URL |\n|------|-----|\n| 官网 | https://example.com |"
+            )
+            verifier = '{"passed": true, "confidence": 95, "issues": []}'
+
+            def fake_executor(*, run_id, node, context, progress_callback, foundation, **kw):
+                outputs = {
+                    "collect": {"collect/raw.json": "[]"},
+                    "write": {"write/report.md": report},
+                    "verify": {"verify/verifier.json": verifier},
+                }
+                return NodeExecutionResult(scratchpad_outputs=outputs.get(node.key, {}))
+
+            with patch("services.node_executors.per_node_executor", side_effect=fake_executor):
                 service.execute_run(run.run_id)
 
             events = run_store.list_events(run.run_id)
@@ -232,10 +245,8 @@ class CoordinatorFoundationTest(unittest.TestCase):
             coordinator_service = CoordinatorFoundationService(coordinator_store)
             service = RunService(run_store, coordinator_service=coordinator_service)
             run = service.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]))
-            run_analysis = Mock(side_effect=RuntimeError("boom"))
-            fake_runner = SimpleNamespace(run_analysis=run_analysis)
 
-            with patch.dict("sys.modules", {"runner": fake_runner}):
+            with patch("services.node_executors.per_node_executor", side_effect=RuntimeError("boom")):
                 service.execute_run(run.run_id)
 
             statuses = {node.key: node.status for node in coordinator_store.list_nodes(run.run_id)}

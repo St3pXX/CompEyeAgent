@@ -1,0 +1,277 @@
+"""Per-node executors for the DAG scheduler.
+
+Each executor creates a single-node CrewAI Crew, reads upstream context from
+the Scratchpad, and writes its output back. This replaces the legacy monolithic
+chain that ran all four stages inside the ``collect`` node.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Callable
+from typing import Any
+
+from models.coordinator import DAGNode, NodeExecutionResult
+from models.schema import CompetitorInput
+from services.coordinator_foundation import CoordinatorFoundationService
+from services.verification import verification_issues, parse_verifier_result
+
+# Maximum characters to inject from upstream scratchpad content into a task
+# description. Prevents context window overflow for large raw data.
+_UPSTREAM_TRUNCATE = 6000
+
+DEFAULT_EVIDENCE_INDEX = "Evidence Index: no indexed evidence is available for this request."
+
+
+def _read_scratchpad(foundation: CoordinatorFoundationService, run_id: str, path: str) -> str:
+    """Read a scratchpad item by path, returning empty string if missing."""
+    try:
+        item = foundation.store.get_scratchpad_item(run_id, path)
+        return item.content
+    except Exception:
+        return ""
+
+
+def _truncate(text: str, max_chars: int = _UPSTREAM_TRUNCATE) -> str:
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + "\n\n[... 内容已截断，完整数据见 Scratchpad ...]"
+
+
+def _run_single_crew(agent: Any, task: Any, inputs: dict[str, Any]) -> str:
+    """Create a single-agent single-task Crew and return the raw output."""
+    from crewai import Crew
+
+    crew = Crew(
+        agents=[agent],
+        tasks=[task],
+        flow="sequential",
+        verbose=True,
+    )
+    result = crew.kickoff(inputs=inputs)
+    output = getattr(task, "output", None)
+    if output is not None:
+        raw = getattr(output, "raw", None)
+        if raw:
+            return str(raw)
+    return str(result)
+
+
+# ---------------------------------------------------------------------------
+# Individual node executors
+# ---------------------------------------------------------------------------
+
+def _execute_collect(
+    *,
+    run_id: str,
+    node: DAGNode,
+    context: dict[str, Any],
+    progress_callback: Callable[[str, str], None],
+    foundation: CoordinatorFoundationService,
+) -> NodeExecutionResult:
+    """Collect: gather public info via web search."""
+    from crewai import Task
+    from crew.agents.collector import collector
+
+    progress_callback("collect", "Collector 正在采集公开信息")
+
+    input_data: CompetitorInput = context["input_data"]
+    inputs = input_data.model_dump()
+    inputs.setdefault("evidenceIndex", context.get("evidence_index", DEFAULT_EVIDENCE_INDEX))
+
+    task = Task(
+        description=(
+            "根据用户提供的竞品列表和维度，使用网络搜索工具采集每个竞品的公开信息。\n"
+            "用户输入：\n"
+            "- 目标产品：{productName}\n"
+            "- 竞品列表：{competitors}\n"
+            "- 分析维度：{dimensions}\n"
+            "- 分析类型：{analysisType}\n\n"
+            "可用的 Evidence Index：\n"
+            "{evidenceIndex}\n"
+            "优先使用 Evidence Index 中已有的结构化证据；证据不足时再使用网络搜索补充。\n"
+            "使用 Evidence Index 时必须保留其中的 source URL、snippet、confidence 和 provider。\n\n"
+            "信息来源允许稀疏覆盖：不要求每类来源都查到信息。\n"
+            "如果某个结论已经能被其他可信来源支撑，可以综合采用；只有结论本身缺少可核验证据时才标记为“待核实”。\n\n"
+            "执行步骤：\n"
+            "1. 先检查 Evidence Index 中是否已有匹配竞品和维度的证据\n"
+            "2. Evidence Index 证据不足时，对每个竞品使用网络搜索\n"
+            "3. 跨来源综合时按来源可信度和原文相关性判断\n"
+            "4. 每条数据必须记录来源 URL 和关键原文片段\n"
+            "5. 以结构化 JSON 格式输出每条采集结果\n\n"
+            "输出格式必须是 JSON 数组，数组项遵循 Evidence Schema：\n"
+            '{"competitor": "竞品名", "dimension": "维度名", "indicator": "指标名", '
+            '"summary": "采集摘要", "source_references": [{"uri": "https://...", "snippet": "原文片段"}]}\n'
+            "禁止输出没有 source_references 的采集项。"
+        ),
+        agent=collector,
+        expected_output="结构化 Evidence JSON 数组，每条数据附有 provenance",
+    )
+
+    output = _run_single_crew(collector, task, inputs)
+    return NodeExecutionResult(
+        output_refs=["collect/raw.json"],
+        scratchpad_outputs={"collect/raw.json": output},
+    )
+
+
+def _execute_analyze(
+    *,
+    run_id: str,
+    node: DAGNode,
+    context: dict[str, Any],
+    progress_callback: Callable[[str, str], None],
+    foundation: CoordinatorFoundationService,
+) -> NodeExecutionResult:
+    """Analyze: structured SWOT/comparison analysis."""
+    from crewai import Task
+    from crew.agents.analyzer import analyzer
+
+    progress_callback("analyze", "Analyzer 正在执行结构化分析")
+
+    raw_data = _read_scratchpad(foundation, run_id, "collect/raw.json")
+    if not raw_data:
+        raise RuntimeError("collect/raw.json 不存在于 Scratchpad 中，无法执行分析")
+
+    truncated = _truncate(raw_data)
+
+    task = Task(
+        description=(
+            "读取采集的原始数据，执行结构化分析（SWOT 或对比表格）。\n\n"
+            f"以下是 Collector 采集的原始数据：\n\n{truncated}\n\n"
+            "执行步骤：\n"
+            "1. 分析每个竞品在各维度上的表现\n"
+            "2. 生成结构化分析结论（Strengths/Weaknesses/Opportunities/Threats）\n"
+            "3. 每条分析结论必须附带 provenance（指向原始数据来源）\n\n"
+            "输出：结构化分析结论 JSON，每条结论附有 provenance。"
+        ),
+        agent=analyzer,
+        expected_output="结构化分析结论 JSON（SWOT 格式），每条结论附有 provenance",
+    )
+
+    output = _run_single_crew(analyzer, task, {})
+    return NodeExecutionResult(
+        output_refs=["analyze/findings.json"],
+        scratchpad_outputs={"analyze/findings.json": output},
+    )
+
+
+def _execute_write(
+    *,
+    run_id: str,
+    node: DAGNode,
+    context: dict[str, Any],
+    progress_callback: Callable[[str, str], None],
+    foundation: CoordinatorFoundationService,
+) -> NodeExecutionResult:
+    """Write: generate Markdown report with provenance."""
+    from crewai import Task
+    from crew.agents.writer import writer
+
+    progress_callback("write", "Writer 正在撰写竞品分析报告")
+
+    findings = _read_scratchpad(foundation, run_id, "analyze/findings.json")
+    if not findings:
+        raise RuntimeError("analyze/findings.json 不存在于 Scratchpad 中，无法撰写报告")
+
+    truncated = _truncate(findings)
+
+    task = Task(
+        description=(
+            "将分析结论组织为可读的 Markdown 竞品分析报告。\n\n"
+            f"以下是 Analyzer 的结构化分析结论：\n\n{truncated}\n\n"
+            "执行步骤：\n"
+            "1. 按照报告规范组织内容（SWOT 框架或对比表格）\n"
+            "2. 每个分析结论必须在同一条 bullet 内附带来源标注，格式严格为 [来源: https://...]\n"
+            "3. 在报告末尾附上标题为“Provenance 索引”的来源索引表\n"
+            "4. 没有来源支撑的结论必须删除或标记为“待核实”\n\n"
+            "输出：Markdown 格式竞品分析报告，每条结论有来源标注。"
+        ),
+        agent=writer,
+        expected_output="Markdown 格式竞品分析报告，包含 SWOT 或对比表格，每条结论附有来源标注",
+    )
+
+    output = _run_single_crew(writer, task, {})
+    return NodeExecutionResult(
+        output_refs=["write/report.md"],
+        scratchpad_outputs={"write/report.md": output},
+    )
+
+
+def _execute_verify(
+    *,
+    run_id: str,
+    node: DAGNode,
+    context: dict[str, Any],
+    progress_callback: Callable[[str, str], None],
+    foundation: CoordinatorFoundationService,
+) -> NodeExecutionResult:
+    """Verify: independent quality check on the report."""
+    from crewai import Task
+    from crew.agents.verifier import verifier
+
+    progress_callback("verify", "Verifier 正在检查报告证据")
+
+    report = _read_scratchpad(foundation, run_id, "write/report.md")
+    if not report:
+        raise RuntimeError("write/report.md 不存在于 Scratchpad 中，无法执行质检")
+
+    truncated = _truncate(report)
+
+    task = Task(
+        description=(
+            "独立校验报告草稿的准确性，主动寻找问题。\n\n"
+            f"以下是 Writer 生成的报告草稿：\n\n{truncated}\n\n"
+            "检查项：\n"
+            "1. 逻辑矛盾检测（同一竞品不同维度结论是否一致）\n"
+            "2. 数据一致性验证（报告数据与原始采集数据是否匹配）\n"
+            "3. 幻觉检测（结论是否有对应的证据支持）\n"
+            "4. 缺失关键维度检测（是否有关键维度未覆盖）\n\n"
+            "质检策略：\n"
+            "- confidence >= 90：报告通过\n"
+            "- 60 <= confidence < 90：标记待复核\n"
+            "- confidence < 60：不通过\n\n"
+            "输出：质检结果 JSON {passed, confidence, issues: [{type, description}]}。"
+        ),
+        agent=verifier,
+        expected_output="质检结果 JSON：{passed: bool, confidence: 0-100, issues: [{type, description}]}",
+    )
+
+    output = _run_single_crew(verifier, task, {})
+    return NodeExecutionResult(
+        output_refs=["verify/verifier.json"],
+        scratchpad_outputs={"verify/verifier.json": output},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Dispatcher
+# ---------------------------------------------------------------------------
+
+_NODE_EXECUTORS: dict[str, Callable[..., NodeExecutionResult]] = {
+    "collect": _execute_collect,
+    "analyze": _execute_analyze,
+    "write": _execute_write,
+    "verify": _execute_verify,
+}
+
+
+def per_node_executor(
+    *,
+    run_id: str,
+    node: DAGNode,
+    context: dict[str, Any],
+    progress_callback: Callable[[str, str], None],
+    foundation: CoordinatorFoundationService,
+    **_kwargs: Any,
+) -> NodeExecutionResult:
+    """Dispatch to the appropriate per-node executor based on node.key."""
+    executor = _NODE_EXECUTORS.get(node.key)
+    if executor is None:
+        raise RuntimeError(f"未知的 DAG 节点类型：{node.key}")
+    return executor(
+        run_id=run_id,
+        node=node,
+        context=context,
+        progress_callback=progress_callback,
+        foundation=foundation,
+    )

@@ -53,16 +53,22 @@ class RunService:
         from runner import run_analysis
 
         if self.coordinator_loop is not None:
-            self.coordinator_loop.execute(
-                run_id,
-                input_data=run.input,
-                allow_retry=allow_retry,
-                evidence_index=self._evidence_index_for_input(run.input),
-                run_analysis=run_analysis,
-            )
+            self._execute_with_coordinator(run_id, run, allow_retry, run_analysis)
             return
 
         self._execute_legacy(run_id, allow_retry=allow_retry, run_analysis=run_analysis)
+
+    def _execute_with_coordinator(self, run_id: str, run: RunRecord, allow_retry: bool, run_analysis: Any) -> None:
+        from services.node_executors import per_node_executor
+
+        self.coordinator_loop.execute(
+            run_id,
+            input_data=run.input,
+            allow_retry=allow_retry,
+            evidence_index=self._evidence_index_for_input(run.input),
+            run_analysis=run_analysis,
+            node_executor=per_node_executor,
+        )
 
     def _execute_legacy(self, run_id: str, *, allow_retry: bool, run_analysis: Any) -> None:
         run = self.store.get_run(run_id)
@@ -130,6 +136,7 @@ class RunService:
             raise RuntimeError("Coordinator loop is not configured")
 
         from runner import run_analysis
+        from services.node_executors import per_node_executor
 
         self.coordinator_loop.retry_node(
             run_id,
@@ -138,6 +145,7 @@ class RunService:
             allow_retry=allow_retry,
             evidence_index=self._evidence_index_for_input(run.input),
             run_analysis=run_analysis,
+            node_executor=per_node_executor,
         )
         return self.store.get_run(run_id)
 
