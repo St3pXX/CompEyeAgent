@@ -149,23 +149,33 @@ flowchart TB
 
 ---
 
-## ✅ Phase 1 核心链路
+## 🏛️ 系统架构
 
 ```text
-Streamlit / CLI
+用户入口（Web App / CLI / API）
       │
       ▼
-CrewAI 顺序链路
-Collector → Analyzer → Writer → Verifier
+FastAPI Gateway ──→ EventBus ──→ SSE 实时推送
       │
       ▼
-Markdown 报告 + Provenance 索引 + Verifier JSON
+Coordinator DAG 调度器
       │
-      ▼
-runner.py 规则层 provenance guard + 最小重写闭环
+      ├── collect 节点 ──→ Collector Agent + WebSearchTool
+      │       ↓ Scratchpad: collect/raw.json
+      ├── analyze 节点 ──→ Analyzer Agent
+      │       ↓ Scratchpad: analyze/findings.json
+      ├── write 节点   ──→ Writer Agent
+      │       ↓ Scratchpad: write/report.md
+      └── verify 节点  ──→ Verifier Agent（MiMo-V2.5-Pro）
+              ↓
+      Provenance Guard + 质检结果
+              ↓
+      Markdown 报告 + 来源索引 + Verifier JSON
+              ↓
+      Prometheus /metrics  ·  OTel Traces
 ```
 
-Phase 1 的定位是验证核心闭环：四类专职 Agent 能协作完成竞品资料采集、分析、撰写和独立质检，并通过规则层 guard 保证报告至少具备逐条来源标注、可访问 URL 和 provenance 索引。
+每个 DAG 节点独立运行自己的 CrewAI Crew，通过 Scratchpad 读取上游产物。节点失败自动重试（可配置次数），失败节点的下游自动跳过。事件通过 EventBus 内存队列毫秒级推送到前端，同时持久化到 SQLite 支持断线重连。
 
 ## 🔬 核心技术亮点
 
