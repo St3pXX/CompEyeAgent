@@ -12,6 +12,7 @@ from models.schema import CompetitorInput
 from services.coordinator_foundation import CoordinatorFoundationService
 from services.event_bus import EventBus
 from services.source_indexer import extract_source_references
+from services.resilience import run_with_timeout
 from services.telemetry import (
     record_event,
     record_node_duration,
@@ -22,7 +23,7 @@ from services.telemetry import (
     trace_run,
 )
 from services.verification import verification_issues
-from storage.run_store import SQLiteRunStore
+from storage.protocols import RunStoreProtocol
 
 
 STAGE_AGENT = {
@@ -38,7 +39,7 @@ STAGE_AGENT = {
 class CoordinatorLoopService:
     """Owns run execution state while the existing CrewAI chain remains the executor."""
 
-    def __init__(self, run_store: SQLiteRunStore, foundation: CoordinatorFoundationService) -> None:
+    def __init__(self, run_store: RunStoreProtocol, foundation: CoordinatorFoundationService) -> None:
         self.run_store = run_store
         self.foundation = foundation
         self._event_bus: EventBus | None = None
@@ -174,6 +175,11 @@ class CoordinatorLoopService:
             nodes = self.foundation.get_dag(run_id).nodes
             failed = [node for node in nodes if node.status == "failed"]
             if failed:
+                # Partial result delivery: if a report exists in scratchpad,
+                # return it as a needs_review draft instead of failing entirely.
+                partial = self._try_partial_result(run_id, input_data, nodes)
+                if partial is not None:
+                    return partial
                 raise RuntimeError(f"DAG node failed: {failed[0].key}")
 
             if all(node.status in {"completed", "skipped"} for node in nodes):
@@ -217,12 +223,15 @@ class CoordinatorLoopService:
             try:
                 with trace_node(run_id, node.key, attempt=attempts):
                     node_start = time.monotonic()
-                    result = executor(
+                    timeout = node.metadata.get("timeout_seconds")
+                    result = run_with_timeout(
+                        executor,
                         run_id=run_id,
                         node=node,
                         context=context,
                         progress_callback=self._progress_callback(run_id),
                         foundation=self.foundation,
+                        timeout_seconds=float(timeout) if timeout else None,
                     )
                     record_node_duration(node.key, time.monotonic() - node_start)
                 self.foundation.record_stage_outputs(run_id, result.scratchpad_outputs)
@@ -325,6 +334,43 @@ class CoordinatorLoopService:
                 "analyze/findings.json": self._read_scratchpad(run_id, "analyze/findings.json"),
                 "write/report.md": report,
                 "verify/verifier.json": verifier_result,
+            },
+        )
+
+    def _try_partial_result(
+        self, run_id: str, input_data: CompetitorInput, nodes: list[DAGNode],
+    ) -> AssembledResult | None:
+        """If the write node completed but verify failed, return a draft report."""
+        node_map = {n.key: n for n in nodes}
+        write_node = node_map.get("write")
+        verify_node = node_map.get("verify")
+        if write_node is None:
+            return None
+        if write_node.status != "completed":
+            return None
+        # Only deliver partial if verify is the node that failed (or skipped due to upstream failure).
+        if verify_node and verify_node.status not in {"failed", "skipped"}:
+            return None
+        report = self._read_scratchpad(run_id, "write/report.md")
+        if not report:
+            return None
+        self._emit(
+            run_id,
+            "agent.progress",
+            "质检节点失败，交付草稿报告（needs_review）",
+            agent="Coordinator",
+            stage="verify",
+        )
+        return AssembledResult(
+            report=report,
+            verifier_result=self._read_scratchpad(run_id, "verify/verifier.json") or "{}",
+            passed=False,
+            retried=False,
+            scratchpad_outputs={
+                "collect/raw.json": self._read_scratchpad(run_id, "collect/raw.json"),
+                "analyze/findings.json": self._read_scratchpad(run_id, "analyze/findings.json"),
+                "write/report.md": report,
+                "verify/verifier.json": self._read_scratchpad(run_id, "verify/verifier.json"),
             },
         )
 

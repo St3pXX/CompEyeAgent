@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from models.source_layer import EvidenceItem, FetchStatus, SourceFetchEvent, SourceSeed
 from services.evidence_extractor import extract_evidence
 from services.source_connectors import SourceConnector, connector_for_provider
-from storage.source_store import SQLiteSourceStore
+from storage.protocols import SourceStoreProtocol
 
 
 DEFAULT_EVIDENCE_INDEX = (
@@ -17,7 +17,7 @@ DEFAULT_EVIDENCE_INDEX = (
 
 
 class EvidenceService:
-    def __init__(self, store: SQLiteSourceStore, connectors: Mapping[str, SourceConnector] | None = None) -> None:
+    def __init__(self, store: SourceStoreProtocol, connectors: Mapping[str, SourceConnector] | None = None) -> None:
         self.store = store
         self.connectors = dict(connectors or {})
 

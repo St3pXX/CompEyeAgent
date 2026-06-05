@@ -6,7 +6,7 @@ import json
 from typing import Any
 
 from models.coordinator import DAGEdge, DAGNode, DAGView, ScratchpadItem, ScratchpadWriteRequest
-from storage.coordinator_store import SQLiteCoordinatorStore
+from storage.protocols import CoordinatorStoreProtocol
 
 
 DEFAULT_DAG_TEMPLATE = (
@@ -18,7 +18,7 @@ DEFAULT_DAG_TEMPLATE = (
 
 
 class CoordinatorFoundationService:
-    def __init__(self, store: SQLiteCoordinatorStore) -> None:
+    def __init__(self, store: CoordinatorStoreProtocol) -> None:
         self.store = store
 
     def ensure_default_dag(self, run_id: str, input_data: dict[str, Any]) -> DAGView:

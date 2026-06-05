@@ -11,7 +11,7 @@ from services.coordinator_loop import CoordinatorLoopService
 from services.evidence_service import DEFAULT_EVIDENCE_INDEX, EvidenceService
 from services.event_bus import EventBus
 from services.source_indexer import extract_source_references
-from storage.run_store import SQLiteRunStore
+from storage.protocols import RunStoreProtocol
 
 
 STAGE_AGENT = {
@@ -27,7 +27,7 @@ STAGE_AGENT = {
 class RunService:
     def __init__(
         self,
-        store: SQLiteRunStore,
+        store: RunStoreProtocol,
         evidence_service: EvidenceService | None = None,
         coordinator_service: CoordinatorFoundationService | None = None,
     ) -> None:
