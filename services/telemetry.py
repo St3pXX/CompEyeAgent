@@ -76,6 +76,25 @@ if _PROM_AVAILABLE and PROM_REGISTRY is not None:
         ["event_type"],
         registry=PROM_REGISTRY,
     )
+    _llm_calls_total = Counter(
+        "compeye_llm_calls_total",
+        "Total LLM API calls",
+        ["model", "node_key", "status"],
+        registry=PROM_REGISTRY,
+    )
+    _llm_duration = Histogram(
+        "compeye_llm_call_duration_seconds",
+        "LLM call latency in seconds",
+        ["model", "node_key"],
+        buckets=[1, 3, 5, 10, 30, 60, 120],
+        registry=PROM_REGISTRY,
+    )
+    _llm_tokens = Counter(
+        "compeye_llm_tokens_total",
+        "Total LLM tokens consumed",
+        ["model", "node_key", "direction"],
+        registry=PROM_REGISTRY,
+    )
     _active_runs = Gauge(
         "compeye_active_runs",
         "Currently running analysis runs",
@@ -87,6 +106,9 @@ else:
     _node_duration = None
     _node_retries = None
     _events_total = None
+    _llm_calls_total = None
+    _llm_duration = None
+    _llm_tokens = None
     _active_runs = None
 
 
@@ -102,6 +124,9 @@ _otel_run_duration: Any = None
 _otel_node_duration: Any = None
 _otel_node_retries: Any = None
 _otel_events_total: Any = None
+_otel_llm_calls: Any = None
+_otel_llm_duration: Any = None
+_otel_llm_tokens: Any = None
 
 
 def init_telemetry() -> bool:
@@ -112,6 +137,7 @@ def init_telemetry() -> bool:
     """
     global _otel_enabled, _tracer, _meter
     global _otel_run_duration, _otel_node_duration, _otel_node_retries, _otel_events_total
+    global _otel_llm_calls, _otel_llm_duration, _otel_llm_tokens
 
     if _otel_enabled:
         return True
@@ -152,6 +178,9 @@ def init_telemetry() -> bool:
     _otel_node_duration = _meter.create_histogram("compeye.node.duration", unit="s", description="Node execution duration")
     _otel_node_retries = _meter.create_counter("compeye.node.retries", description="Node retry count")
     _otel_events_total = _meter.create_counter("compeye.events", description="Event count")
+    _otel_llm_calls = _meter.create_counter("compeye.llm.calls", description="LLM call count")
+    _otel_llm_duration = _meter.create_histogram("compeye.llm.duration", unit="s", description="LLM call latency")
+    _otel_llm_tokens = _meter.create_counter("compeye.llm.tokens", description="LLM tokens consumed")
 
     _otel_enabled = True
     return True
@@ -232,6 +261,76 @@ def record_event(event_type: str) -> None:
         _events_total.labels(event_type=event_type).inc()
     if _otel_events_total is not None:
         _otel_events_total.add(1, {"event_type": event_type})
+
+
+# ---------------------------------------------------------------------------
+# LLM call instrumentation
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def trace_llm_call(
+    model: str,
+    node_key: str,
+    *,
+    prompt_length: int | None = None,
+):
+    """Context manager for tracing an individual LLM API call.
+
+    Usage::
+
+        with trace_llm_call("mimo-v2.5", "collect", prompt_length=1200) as span:
+            result = crew.kickoff(inputs=inputs)
+            if span:
+                span.set_attribute("output_length", len(str(result)))
+    """
+    if _tracer is not None:
+        attrs: dict[str, Any] = {"model": model, "node_key": node_key}
+        if prompt_length is not None:
+            attrs["prompt_length"] = prompt_length
+        with _tracer.start_as_current_span("llm.call", attributes=attrs) as span:
+            start = time.monotonic()
+            try:
+                yield span
+            finally:
+                duration = time.monotonic() - start
+                span.set_attribute("duration_seconds", duration)
+                record_llm_call(model, node_key, duration, status="success")
+    else:
+        start = time.monotonic()
+        yield None
+        duration = time.monotonic() - start
+        record_llm_call(model, node_key, duration, status="success")
+
+
+def record_llm_call(
+    model: str,
+    node_key: str,
+    duration_seconds: float,
+    *,
+    status: str = "success",
+    input_tokens: int | None = None,
+    output_tokens: int | None = None,
+) -> None:
+    """Record an LLM call for both Prometheus and OTel metrics."""
+    # Prometheus
+    if _llm_calls_total is not None:
+        _llm_calls_total.labels(model=model, node_key=node_key, status=status).inc()
+    if _llm_duration is not None:
+        _llm_duration.labels(model=model, node_key=node_key).observe(duration_seconds)
+    if input_tokens is not None and _llm_tokens is not None:
+        _llm_tokens.labels(model=model, node_key=node_key, direction="input").inc(input_tokens)
+    if output_tokens is not None and _llm_tokens is not None:
+        _llm_tokens.labels(model=model, node_key=node_key, direction="output").inc(output_tokens)
+
+    # OTel
+    if _otel_llm_calls is not None:
+        _otel_llm_calls.add(1, {"model": model, "node_key": node_key, "status": status})
+    if _otel_llm_duration is not None:
+        _otel_llm_duration.record(duration_seconds, {"model": model, "node_key": node_key})
+    if input_tokens is not None and _otel_llm_tokens is not None:
+        _otel_llm_tokens.add(input_tokens, {"model": model, "node_key": node_key, "direction": "input"})
+    if output_tokens is not None and _otel_llm_tokens is not None:
+        _otel_llm_tokens.add(output_tokens, {"model": model, "node_key": node_key, "direction": "output"})
 
 
 def get_prometheus_metrics() -> bytes:

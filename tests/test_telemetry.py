@@ -7,11 +7,13 @@ from services.telemetry import (
     get_prometheus_metrics,
     init_telemetry,
     record_event,
+    record_llm_call,
     record_node_duration,
     record_node_retry,
     record_run_completed,
     record_run_created,
     record_run_started,
+    trace_llm_call,
 )
 
 
@@ -61,6 +63,23 @@ class TelemetryTest(unittest.TestCase):
         self.assertIn("compeye_node_duration_seconds", output)
         self.assertIn("compeye_events_total", output)
         self.assertIn("compeye_active_runs", output)
+
+    def test_record_llm_call_does_not_raise(self) -> None:
+        record_llm_call("mimo-v2.5", "collect", 3.5, status="success", input_tokens=100, output_tokens=50)
+
+    def test_record_llm_call_failure(self) -> None:
+        record_llm_call("mimo-v2.5", "verify", 1.0, status="failure")
+
+    def test_trace_llm_call_context_manager(self) -> None:
+        with trace_llm_call("mimo-v2.5", "collect", prompt_length=500) as span:
+            self.assertIsNone(span)  # OTel disabled, span is None
+
+    def test_prometheus_contains_llm_metrics(self) -> None:
+        record_llm_call("mimo-v2.5", "collect", 2.0, input_tokens=200, output_tokens=100)
+        output = get_prometheus_metrics().decode("utf-8")
+        self.assertIn("compeye_llm_calls_total", output)
+        self.assertIn("compeye_llm_call_duration_seconds", output)
+        self.assertIn("compeye_llm_tokens_total", output)
 
 
 if __name__ == "__main__":

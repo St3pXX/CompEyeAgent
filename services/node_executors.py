@@ -13,6 +13,7 @@ from typing import Any
 from models.coordinator import DAGNode, NodeExecutionResult
 from models.schema import CompetitorInput
 from services.coordinator_foundation import CoordinatorFoundationService
+from services.telemetry import trace_llm_call
 from services.verification import verification_issues, parse_verifier_result
 
 # Maximum characters to inject from upstream scratchpad content into a task
@@ -37,7 +38,7 @@ def _truncate(text: str, max_chars: int = _UPSTREAM_TRUNCATE) -> str:
     return text[:max_chars] + "\n\n[... 内容已截断，完整数据见 Scratchpad ...]"
 
 
-def _run_single_crew(agent: Any, task: Any, inputs: dict[str, Any]) -> str:
+def _run_single_crew(agent: Any, task: Any, inputs: dict[str, Any], node_key: str = "unknown") -> str:
     """Create a single-agent single-task Crew and return the raw output."""
     from crewai import Crew
 
@@ -47,7 +48,9 @@ def _run_single_crew(agent: Any, task: Any, inputs: dict[str, Any]) -> str:
         flow="sequential",
         verbose=True,
     )
-    result = crew.kickoff(inputs=inputs)
+    prompt_length = len(task.description) if hasattr(task, "description") else None
+    with trace_llm_call(node_key, node_key, prompt_length=prompt_length):
+        result = crew.kickoff(inputs=inputs)
     output = getattr(task, "output", None)
     if output is not None:
         raw = getattr(output, "raw", None)
@@ -107,7 +110,7 @@ def _execute_collect(
         expected_output="结构化 Evidence JSON 数组，每条数据附有 provenance",
     )
 
-    output = _run_single_crew(collector, task, inputs)
+    output = _run_single_crew(collector, task, inputs, node_key="collect")
     return NodeExecutionResult(
         output_refs=["collect/raw.json"],
         scratchpad_outputs={"collect/raw.json": output},
@@ -148,7 +151,7 @@ def _execute_analyze(
         expected_output="结构化分析结论 JSON（SWOT 格式），每条结论附有 provenance",
     )
 
-    output = _run_single_crew(analyzer, task, {})
+    output = _run_single_crew(analyzer, task, {}, node_key="analyze")
     return NodeExecutionResult(
         output_refs=["analyze/findings.json"],
         scratchpad_outputs={"analyze/findings.json": output},
@@ -190,7 +193,7 @@ def _execute_write(
         expected_output="Markdown 格式竞品分析报告，包含 SWOT 或对比表格，每条结论附有来源标注",
     )
 
-    output = _run_single_crew(writer, task, {})
+    output = _run_single_crew(writer, task, {}, node_key="write")
     return NodeExecutionResult(
         output_refs=["write/report.md"],
         scratchpad_outputs={"write/report.md": output},
@@ -236,7 +239,7 @@ def _execute_verify(
         expected_output="质检结果 JSON：{passed: bool, confidence: 0-100, issues: [{type, description}]}",
     )
 
-    output = _run_single_crew(verifier, task, {})
+    output = _run_single_crew(verifier, task, {}, node_key="verify")
     return NodeExecutionResult(
         output_refs=["verify/verifier.json"],
         scratchpad_outputs={"verify/verifier.json": output},
