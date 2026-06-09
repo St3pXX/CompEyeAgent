@@ -208,7 +208,7 @@ Coordinator DAG 调度器
 | **Phase 1: 可运行 MVP** | ✅ 已完成 | 跑通真实多 Agent 竞品分析链路 | Streamlit 在线入口、CLI、CrewAI 顺序链路、MiMo 原生搜索、Verifier 质检、最小重写闭环、规则层 provenance guard |
 | **Phase 1.5: 在线产品 Demo** | ✅ 已完成 | 把当前可运行链路包装成可持续迭代的在线产品形态 | FastAPI 包装层、Web App（Demo / Dashboard / Report）、SSE 事件流、SQLite run store、前后端同服务托管、云部署配置文档 |
 | **Phase 2: 任务编排增强** | ✅ 已完成 | 增强后端任务编排、可观测数据源和实时事件推送 | 见下方 Phase 2 详细里程碑 |
-| **Phase 3A: 企业级运行底座** | 📋 规划中 | 提升稳定性、治理能力和可维护性 | PostgreSQL/Redis、长期记忆库、权限系统、多模型 fallback、人工复核队列 |
+| **Phase 3A: 企业级运行底座** | ✅ 已完成 | 提升稳定性、治理能力和可维护性 | 见下方 Phase 3A 详细里程碑 |
 | **Phase 3B: 平台化集成** | 📋 规划中 | 将竞品分析能力接入外部工作流和 Agent 生态 | MCP Server、Claude Code / Codex 接入、飞书/钉钉机器人、Webhook、企业知识库集成 |
 
 ### Phase 2 详细里程碑
@@ -223,6 +223,18 @@ Coordinator DAG 调度器
 | **Per-Node Executor** | 四个独立节点执行器（collect / analyze / write / verify），每个创建单节点 CrewAI Crew，通过 Scratchpad 读取上游输出 |
 | **Async Generator 升级** | EventBus 内存事件队列、`_emit()` 双写（SQLite + 队列）、SSE 端点零轮询推送 |
 | **OTel 指标集成** | Prometheus `/metrics` 端点、OTel 分布式追踪（run / node span）、运行时指标（run duration、node duration、retries、events） |
+
+### Phase 3A 详细里程碑
+
+| 子里程碑 | 说明 |
+|----------|------|
+| **存储抽象层** | `storage/protocols.py` 定义 RunStoreProtocol / CoordinatorStoreProtocol / SourceStoreProtocol，SQLite 实现满足 Protocol，PostgreSQL 迁移只需新增实现类 |
+| **韧性设计** | `services/resilience.py`：CircuitBreaker（closed/open/half_open 状态机）、`run_with_timeout` 节点超时、部分结果交付（verify 失败时交付草稿报告） |
+| **多模型降级** | `config/model_registry.py`：ModelProvider + ModelRegistry，按 agent role 注册多 provider 按优先级 fallback，支持环境变量和 YAML 配置，集成 CircuitBreaker 健康追踪 |
+| **完整 OTel** | LLM 调用 span（`trace_llm_call`，记录 model/prompt_length/duration）、per-model Prometheus 指标（`compeye_llm_calls_total` / `compeye_llm_call_duration_seconds` / `compeye_llm_tokens_total`） |
+| **人工复核队列** | `review_queue` 表、`needs_review` 自动入队、审核 API（list/get/approve/reject/assign）、`services/review_service.py` |
+| **长期记忆** | ChromaDB 向量存储（`storage/vector_store.py`）、`services/memory_service.py`：从已通过 run 提取已验证事实、语义检索历史知识注入 Collector/Analyzer 提示词 |
+| **企业级 Dashboard** | Web App 新增 3 个页面：概览（统计卡片 + 最近任务 + 待审核入口）、复核队列（过滤/批准/驳回/指派）、成本追踪（Token 使用量汇总 + 明细表） |
 
 ### 文档索引
 
