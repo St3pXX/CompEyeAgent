@@ -33,7 +33,22 @@ coordinator_store = SQLiteCoordinatorStore()
 coordinator_service = CoordinatorFoundationService(coordinator_store)
 source_store = SQLiteSourceStore()
 evidence_service = EvidenceService(source_store)
-run_service = RunService(store, evidence_service=evidence_service, coordinator_service=coordinator_service)
+
+# Long-term memory (optional — gracefully disabled if ChromaDB unavailable)
+memory_service = None
+try:
+    from services.memory_service import MemoryService
+    from storage.vector_store import VectorStore
+    memory_service = MemoryService(VectorStore(), store)
+except Exception:
+    pass
+
+run_service = RunService(
+    store,
+    evidence_service=evidence_service,
+    coordinator_service=coordinator_service,
+    memory_service=memory_service,
+)
 event_bus = EventBus()
 FRONTEND_DIST = Path(__file__).resolve().parent / "frontend" / "dist"
 FRONTEND_INDEX = FRONTEND_DIST / "index.html"

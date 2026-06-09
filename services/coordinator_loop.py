@@ -79,6 +79,7 @@ class CoordinatorLoopService:
         run_analysis: Callable[..., Any],
         node_executor: Callable[..., NodeExecutionResult] | None = None,
         event_bus: EventBus | None = None,
+        memory_context: str | None = None,
     ) -> None:
         run = self.run_store.get_run(run_id)
         if run.status == "cancelled":
@@ -100,6 +101,7 @@ class CoordinatorLoopService:
                     evidence_index=evidence_index,
                     run_analysis=run_analysis,
                     node_executor=node_executor,
+                    memory_context=memory_context,
                 )
             self._persist_success(run_id, input_data, result)
             record_run_completed("passed" if result.passed else "needs_review", time.monotonic() - run_start)
@@ -158,12 +160,14 @@ class CoordinatorLoopService:
         evidence_index: str,
         run_analysis: Callable[..., Any],
         node_executor: Callable[..., NodeExecutionResult] | None,
+        memory_context: str | None = None,
     ) -> Any:
         executor = node_executor or self._legacy_chain_node_executor(run_analysis)
         context: dict[str, Any] = {
             "input_data": input_data,
             "allow_retry": allow_retry,
             "evidence_index": evidence_index,
+            "memory_context": memory_context or "",
             "final_result": None,
         }
 

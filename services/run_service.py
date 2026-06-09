@@ -30,10 +30,12 @@ class RunService:
         store: RunStoreProtocol,
         evidence_service: EvidenceService | None = None,
         coordinator_service: CoordinatorFoundationService | None = None,
+        memory_service: Any | None = None,
     ) -> None:
         self.store = store
         self.evidence_service = evidence_service
         self.coordinator_service = coordinator_service
+        self.memory_service = memory_service
         self.coordinator_loop = CoordinatorLoopService(store, coordinator_service) if coordinator_service else None
 
     def create_run(self, input_data: CompetitorInput, *, allow_retry: bool = True) -> RunRecord:
@@ -64,6 +66,13 @@ class RunService:
     ) -> None:
         from services.node_executors import per_node_executor
 
+        # Query long-term memory for relevant historical facts.
+        memory_context = ""
+        if self.memory_service is not None:
+            competitors = [run.input.productName, *run.input.competitors]
+            dimensions = [d.name for d in run.input.dimensions]
+            memory_context = self.memory_service.query_for_run(competitors, dimensions)
+
         self.coordinator_loop.execute(
             run_id,
             input_data=run.input,
@@ -72,7 +81,17 @@ class RunService:
             run_analysis=run_analysis,
             node_executor=per_node_executor,
             event_bus=event_bus,
+            memory_context=memory_context,
         )
+
+        # After successful completion, ingest facts into long-term memory.
+        if self.memory_service is not None:
+            try:
+                completed_run = self.store.get_run(run_id)
+                if completed_run.status in ("passed", "needs_review"):
+                    self.memory_service.ingest_completed_run(run_id)
+            except Exception:
+                pass  # non-fatal
 
     def _execute_legacy(self, run_id: str, *, allow_retry: bool, run_analysis: Any) -> None:
         run = self.store.get_run(run_id)
