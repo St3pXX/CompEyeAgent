@@ -305,6 +305,51 @@ def assign_review(review_id: str, request: ReviewActionRequest) -> dict[str, obj
         raise HTTPException(status_code=404, detail="Review not found") from None
 
 
+# ---------------------------------------------------------------------------
+# Aggregate stats & cost tracking
+# ---------------------------------------------------------------------------
+
+@app.get("/api/stats")
+def get_stats() -> dict[str, object]:
+    """Aggregate statistics across all runs."""
+    runs = store.list_runs(limit=1000)
+    by_status: dict[str, int] = {}
+    for r in runs:
+        by_status[r.status] = by_status.get(r.status, 0) + 1
+    reviews = store.list_reviews(limit=1000)
+    pending_reviews = sum(1 for r in reviews if r.status == "pending")
+    return {
+        "total_runs": len(runs),
+        "by_status": by_status,
+        "pending_reviews": pending_reviews,
+        "total_reviews": len(reviews),
+    }
+
+
+@app.get("/api/costs")
+def get_costs() -> dict[str, object]:
+    """Token cost tracking — aggregates LLM token usage from events."""
+    runs = store.list_runs(limit=100)
+    cost_data: list[dict[str, object]] = []
+    for run in runs:
+        events = store.list_events(run.run_id)
+        total_input = 0
+        total_output = 0
+        for event in events:
+            tokens = event.payload.get("tokens", {})
+            if isinstance(tokens, dict):
+                total_input += tokens.get("input", 0)
+                total_output += tokens.get("output", 0)
+        cost_data.append({
+            "run_id": run.run_id,
+            "status": run.status,
+            "created_at": run.created_at,
+            "input_tokens": total_input,
+            "output_tokens": total_output,
+        })
+    return {"costs": cost_data}
+
+
 @app.post("/api/sources/seeds", status_code=201)
 def create_source_seed(seed: SourceSeed) -> dict[str, object]:
     return {"seed": source_store.upsert_seed(seed)}

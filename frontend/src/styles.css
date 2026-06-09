@@ -797,3 +797,298 @@ button:disabled,
     flex-direction: column;
   }
 }
+
+/* =========================================================================
+   Enterprise Dashboard — Overview / Review / Cost pages
+   ========================================================================= */
+
+.overview-page,
+.review-page,
+.cost-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px;
+}
+
+.overview-page h1,
+.review-page h1,
+.cost-page h1 {
+  font-size: 1.4rem;
+  margin-bottom: 20px;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--bg-elevated, #1a1a2e);
+  border: 1px solid var(--border, #2a2a4a);
+  border-radius: 10px;
+  padding: 16px;
+  text-align: center;
+}
+
+.stat-card--alert {
+  border-color: #f59e0b;
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text, #e0e0e0);
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+  margin-top: 4px;
+}
+
+.overview-columns {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 20px;
+}
+
+.overview-section h2 {
+  font-size: 1.1rem;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.see-all {
+  font-size: 0.8rem;
+  color: var(--accent, #6c63ff);
+  text-decoration: none;
+}
+
+.run-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.run-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg-elevated, #1a1a2e);
+  border: 1px solid var(--border, #2a2a4a);
+  border-radius: 8px;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s;
+}
+
+.run-row:hover {
+  border-color: var(--accent, #6c63ff);
+}
+
+.run-product {
+  font-weight: 600;
+  min-width: 60px;
+}
+
+.run-competitors {
+  color: var(--text-muted, #888);
+  font-size: 0.85rem;
+  flex: 1;
+}
+
+.run-time {
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-passed { background: #10b98122; color: #10b981; }
+.status-needs_review { background: #f59e0b22; color: #f59e0b; }
+.status-failed { background: #ef444422; color: #ef4444; }
+.status-running { background: #6c63ff22; color: #6c63ff; }
+.status-queued { background: #88888822; color: #888; }
+.status-cancelled { background: #88888822; color: #888; }
+.status-pending { background: #f59e0b22; color: #f59e0b; }
+.status-in_review { background: #6c63ff22; color: #6c63ff; }
+.status-approved { background: #10b98122; color: #10b981; }
+.status-rejected { background: #ef444422; color: #ef4444; }
+
+.empty-hint {
+  color: var(--text-muted, #888);
+  font-size: 0.9rem;
+  padding: 16px 0;
+}
+
+/* Review page */
+.review-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.review-filters button {
+  padding: 6px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--border, #2a2a4a);
+  background: transparent;
+  color: var(--text-muted, #888);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.review-filters button.active {
+  background: var(--accent, #6c63ff);
+  color: #fff;
+  border-color: var(--accent, #6c63ff);
+}
+
+.review-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.review-card {
+  background: var(--bg-elevated, #1a1a2e);
+  border: 1px solid var(--border, #2a2a4a);
+  border-radius: 10px;
+  padding: 16px;
+}
+
+.review-card.review-pending { border-left: 3px solid #f59e0b; }
+.review-card.review-in_review { border-left: 3px solid #6c63ff; }
+.review-card.review-approved { border-left: 3px solid #10b981; }
+.review-card.review-rejected { border-left: 3px solid #ef4444; }
+
+.review-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.review-run-link {
+  color: var(--accent, #6c63ff);
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.review-time {
+  margin-left: auto;
+  font-size: 0.8rem;
+  color: var(--text-muted, #888);
+}
+
+.review-issues {
+  margin: 8px 0;
+  padding-left: 18px;
+  font-size: 0.85rem;
+  color: var(--text-muted, #ccc);
+}
+
+.review-assignee,
+.review-notes {
+  font-size: 0.85rem;
+  color: var(--text-muted, #888);
+  margin: 4px 0;
+}
+
+.review-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.btn {
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.btn-approve { background: #10b981; color: #fff; }
+.btn-reject { background: #ef4444; color: #fff; }
+.btn-assign { background: var(--accent, #6c63ff); color: #fff; }
+
+.assign-input {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.assign-input input {
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border, #2a2a4a);
+  background: var(--bg, #0d0d1a);
+  color: var(--text, #e0e0e0);
+  font-size: 0.85rem;
+}
+
+/* Cost page */
+.cost-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.cost-table th,
+.cost-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border, #2a2a4a);
+}
+
+.cost-table th {
+  color: var(--text-muted, #888);
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
+
+.num-cell {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.run-id-cell {
+  font-family: monospace;
+  font-size: 0.85rem;
+}
+
+.page-loading {
+  text-align: center;
+  padding: 60px;
+  color: var(--text-muted, #888);
+}
+
+@media (max-width: 720px) {
+  .overview-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .run-row {
+    flex-wrap: wrap;
+  }
+}

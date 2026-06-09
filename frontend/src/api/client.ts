@@ -1,13 +1,17 @@
 import type {
   AgentEvent,
   ArtifactRecord,
+  CostsResponse,
   CreateRunRequest,
   CreateRunResponse,
   DAGView,
   InspectorSummary,
+  ReviewItem,
   RunDetailResponse,
+  RunRecord,
   ScratchpadItem,
-  SourceRecord
+  SourceRecord,
+  StatsResponse,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "";
@@ -87,4 +91,62 @@ export function downloadTextFile(filename: string, content: string, mimeType = "
   anchor.download = filename;
   anchor.click();
   URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+// Review queue
+// ---------------------------------------------------------------------------
+
+export async function listReviews(params?: { status?: string; limit?: number }): Promise<ReviewItem[]> {
+  const qs = new URLSearchParams();
+  if (params?.status) qs.set("status", params.status);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  const data = await request<{ reviews: ReviewItem[] }>(`/api/reviews?${qs}`);
+  return data.reviews;
+}
+
+export async function getReview(reviewId: string): Promise<ReviewItem> {
+  const data = await request<{ review: ReviewItem }>(`/api/reviews/${reviewId}`);
+  return data.review;
+}
+
+export async function approveReview(reviewId: string, notes?: string): Promise<ReviewItem> {
+  const data = await request<{ review: ReviewItem }>(`/api/reviews/${reviewId}/approve`, {
+    method: "POST",
+    body: JSON.stringify({ notes }),
+  });
+  return data.review;
+}
+
+export async function rejectReview(reviewId: string, notes?: string): Promise<ReviewItem> {
+  const data = await request<{ review: ReviewItem }>(`/api/reviews/${reviewId}/reject`, {
+    method: "POST",
+    body: JSON.stringify({ notes }),
+  });
+  return data.review;
+}
+
+export async function assignReview(reviewId: string, assignee: string): Promise<ReviewItem> {
+  const data = await request<{ review: ReviewItem }>(`/api/reviews/${reviewId}/assign`, {
+    method: "POST",
+    body: JSON.stringify({ assignee }),
+  });
+  return data.review;
+}
+
+// ---------------------------------------------------------------------------
+// Stats & costs
+// ---------------------------------------------------------------------------
+
+export async function getStats(): Promise<StatsResponse> {
+  return request<StatsResponse>("/api/stats");
+}
+
+export async function getCosts(): Promise<CostsResponse> {
+  return request<CostsResponse>("/api/costs");
+}
+
+export async function listRuns(limit = 50): Promise<RunRecord[]> {
+  const data = await request<{ runs: RunRecord[] }>(`/api/runs?limit=${limit}`);
+  return data.runs;
 }

@@ -123,3 +123,36 @@ export type RunDetailResponse = {
   artifacts: ArtifactRecord[];
   sources: SourceRecord[];
 };
+
+export type ReviewStatus = "pending" | "in_review" | "approved" | "rejected";
+
+export type ReviewItem = {
+  review_id: string;
+  run_id: string;
+  status: ReviewStatus;
+  issues: string[];
+  assigned_to?: string | null;
+  review_notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  reviewed_at?: string | null;
+};
+
+export type StatsResponse = {
+  total_runs: number;
+  by_status: Record<string, number>;
+  pending_reviews: number;
+  total_reviews: number;
+};
+
+export type CostEntry = {
+  run_id: string;
+  status: string;
+  created_at: string;
+  input_tokens: number;
+  output_tokens: number;
+};
+
+export type CostsResponse = {
+  costs: CostEntry[];
+};
