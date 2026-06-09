@@ -14,3 +14,4 @@ opentelemetry-instrumentation-fastapi>=0.46b0
 opentelemetry-exporter-otlp-proto-grpc>=1.25.0
 prometheus-client>=0.20.0
 chromadb>=0.5.0
+mcp>=1.0.0
