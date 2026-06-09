@@ -209,7 +209,7 @@ Coordinator DAG 调度器
 | **Phase 1.5: 在线产品 Demo** | ✅ 已完成 | 把当前可运行链路包装成可持续迭代的在线产品形态 | FastAPI 包装层、Web App（Demo / Dashboard / Report）、SSE 事件流、SQLite run store、前后端同服务托管、云部署配置文档 |
 | **Phase 2: 任务编排增强** | ✅ 已完成 | 增强后端任务编排、可观测数据源和实时事件推送 | 见下方 Phase 2 详细里程碑 |
 | **Phase 3A: 企业级运行底座** | ✅ 已完成 | 提升稳定性、治理能力和可维护性 | 见下方 Phase 3A 详细里程碑 |
-| **Phase 3B: 平台化集成** | 📋 规划中 | 将竞品分析能力接入外部工作流和 Agent 生态 | MCP Server、Claude Code / Codex 接入、飞书/钉钉机器人、Webhook、企业知识库集成 |
+| **Phase 3B: 平台化集成** | 🟡 部分完成 | 将竞品分析能力接入外部工作流和 Agent 生态 | MCP Server 已完成（见下方），飞书/钉钉机器人、Webhook 待实现 |
 
 ### Phase 2 详细里程碑
 
@@ -356,6 +356,35 @@ uvicorn api_app:app --host 0.0.0.0 --port 8000
 ```
 
 构建后，FastAPI 会直接托管 `frontend/dist`。`/api/*` 和 `/sse/*` 保持后端接口，`/demo`、`/dashboard/:runId`、`/reports/:runId` 等 React 路由刷新会回退到 `index.html`。
+
+### MCP Server（Claude Code / Agent 工作台接入）
+
+```bash
+# stdio 模式（Claude Desktop / Claude Code 直接调用）
+python mcp_server.py
+
+# HTTP/SSE 模式（远程访问）
+python mcp_server.py --transport http --port 9000
+```
+
+Claude Desktop 配置（`claude_desktop_config.json`）：
+
+```json
+{
+  "mcpServers": {
+    "compeye": {
+      "command": "python",
+      "args": ["mcp_server.py"],
+      "env": {
+        "MIMO_BASE_URL": "https://api.xiaomimimo.com/v1",
+        "MIMO_API_KEY": "sk-xxx"
+      }
+    }
+  }
+}
+```
+
+暴露的 MCP 工具：`create_run`、`get_run`、`get_report`、`get_verification`、`list_runs`、`get_sources`、`get_scratchpad`、`cancel_run`。
 
 ---
 
