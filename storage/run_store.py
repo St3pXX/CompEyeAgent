@@ -19,6 +19,8 @@ from models.schema import (
     ArtifactRecord,
     CompetitorInput,
     EventType,
+    ReviewItem,
+    ReviewStatus,
     RunRecord,
     RunStatus,
     SourceRecord,
@@ -228,6 +230,113 @@ class SQLiteRunStore:
             )
         return self.list_sources(run_id)
 
+    # ------------------------------------------------------------------
+    # Review queue
+    # ------------------------------------------------------------------
+
+    def create_review(
+        self,
+        run_id: str,
+        issues: list[str],
+        *,
+        assigned_to: str | None = None,
+    ) -> ReviewItem:
+        now = utc_now()
+        review_id = str(uuid.uuid4())
+        with self._connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO review_queue (review_id, run_id, status, issues_json, assigned_to, created_at, updated_at)
+                VALUES (?, ?, 'pending', ?, ?, ?, ?)
+                """,
+                (review_id, run_id, json.dumps(issues, ensure_ascii=False), assigned_to, now, now),
+            )
+        return self.get_review(review_id)
+
+    def get_review(self, review_id: str) -> ReviewItem:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM review_queue WHERE review_id = ?", (review_id,),
+            ).fetchone()
+        if row is None:
+            raise KeyError(f"Review {review_id} not found")
+        return self._review_from_row(row)
+
+    def list_reviews(
+        self,
+        *,
+        status: ReviewStatus | None = None,
+        run_id: str | None = None,
+        limit: int = 50,
+    ) -> list[ReviewItem]:
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status:
+            clauses.append("status = ?")
+            params.append(status)
+        if run_id:
+            clauses.append("run_id = ?")
+            params.append(run_id)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(limit)
+        with self._connection() as conn:
+            rows = conn.execute(
+                f"SELECT * FROM review_queue {where} ORDER BY created_at DESC LIMIT ?",
+                params,
+            ).fetchall()
+        return [self._review_from_row(row) for row in rows]
+
+    def update_review(
+        self,
+        review_id: str,
+        *,
+        status: ReviewStatus | None = None,
+        assigned_to: str | None = None,
+        review_notes: str | None = None,
+    ) -> ReviewItem:
+        sets: list[str] = ["updated_at = ?"]
+        params: list[Any] = [utc_now()]
+        if status is not None:
+            sets.append("status = ?")
+            params.append(status)
+            if status in ("approved", "rejected"):
+                sets.append("reviewed_at = ?")
+                params.append(utc_now())
+        if assigned_to is not None:
+            sets.append("assigned_to = ?")
+            params.append(assigned_to)
+        if review_notes is not None:
+            sets.append("review_notes = ?")
+            params.append(review_notes)
+        params.append(review_id)
+        with self._connection() as conn:
+            conn.execute(
+                f"UPDATE review_queue SET {', '.join(sets)} WHERE review_id = ?",
+                params,
+            )
+        return self.get_review(review_id)
+
+    def get_review_by_run(self, run_id: str) -> ReviewItem | None:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM review_queue WHERE run_id = ? ORDER BY created_at DESC LIMIT 1",
+                (run_id,),
+            ).fetchone()
+        return self._review_from_row(row) if row else None
+
+    def _review_from_row(self, row: sqlite3.Row) -> ReviewItem:
+        return ReviewItem(
+            review_id=row["review_id"],
+            run_id=row["run_id"],
+            status=row["status"],
+            issues=json.loads(row["issues_json"]),
+            assigned_to=row["assigned_to"],
+            review_notes=row["review_notes"],
+            created_at=row["created_at"],
+            updated_at=row["updated_at"],
+            reviewed_at=row["reviewed_at"],
+        )
+
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
         with self._lock:
@@ -295,6 +404,22 @@ class SQLiteRunStore:
 
                 CREATE INDEX IF NOT EXISTS idx_source_references_run_id
                 ON source_references(run_id);
+
+                CREATE TABLE IF NOT EXISTS review_queue (
+                    review_id TEXT PRIMARY KEY,
+                    run_id TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    issues_json TEXT NOT NULL DEFAULT '[]',
+                    assigned_to TEXT,
+                    review_notes TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    reviewed_at TEXT,
+                    FOREIGN KEY (run_id) REFERENCES analysis_runs(run_id)
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_review_queue_status
+                ON review_queue(status);
                 """
             )
 

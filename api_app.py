@@ -10,6 +10,7 @@ from pathlib import Path
 
 import config.settings
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Query
+from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -223,6 +224,70 @@ def get_run_inspector(run_id: str) -> dict[str, object]:
 @app.get("/api/runs/{run_id}/trace")
 def get_run_trace(run_id: str) -> dict[str, object]:
     return run_service.empty_extension_payload(run_id, "trace")
+
+
+# ---------------------------------------------------------------------------
+# Review queue
+# ---------------------------------------------------------------------------
+
+@app.get("/api/reviews")
+def list_reviews(
+    status: str | None = Query(default=None),
+    run_id: str | None = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=200),
+) -> dict[str, object]:
+    from models.schema import ReviewStatus
+    review_status: ReviewStatus | None = status if status in ("pending", "in_review", "approved", "rejected") else None
+    return {"reviews": store.list_reviews(status=review_status, run_id=run_id, limit=limit)}
+
+
+@app.get("/api/reviews/{review_id}")
+def get_review(review_id: str) -> dict[str, object]:
+    try:
+        return {"review": store.get_review(review_id)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Review not found") from None
+
+
+@app.get("/api/runs/{run_id}/review")
+def get_run_review(run_id: str) -> dict[str, object]:
+    review = store.get_review_by_run(run_id)
+    if review is None:
+        raise HTTPException(status_code=404, detail="No review found for this run")
+    return {"review": review}
+
+
+class ReviewActionRequest(BaseModel):
+    notes: str | None = None
+    assignee: str | None = None
+
+
+@app.post("/api/reviews/{review_id}/approve")
+def approve_review(review_id: str, request: ReviewActionRequest | None = None) -> dict[str, object]:
+    notes = request.notes if request else None
+    try:
+        return {"review": store.update_review(review_id, status="approved", review_notes=notes)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Review not found") from None
+
+
+@app.post("/api/reviews/{review_id}/reject")
+def reject_review(review_id: str, request: ReviewActionRequest | None = None) -> dict[str, object]:
+    notes = request.notes if request else None
+    try:
+        return {"review": store.update_review(review_id, status="rejected", review_notes=notes)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Review not found") from None
+
+
+@app.post("/api/reviews/{review_id}/assign")
+def assign_review(review_id: str, request: ReviewActionRequest) -> dict[str, object]:
+    if not request.assignee:
+        raise HTTPException(status_code=400, detail="assignee is required")
+    try:
+        return {"review": store.update_review(review_id, status="in_review", assigned_to=request.assignee)}
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Review not found") from None
 
 
 @app.post("/api/sources/seeds", status_code=201)

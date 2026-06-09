@@ -399,6 +399,11 @@ class CoordinatorLoopService:
         )
         self.run_store.update_run_status(run_id, status, completed=True)
         self.foundation.mark_run_finished(run_id, passed=result.passed)
+        # Auto-create review item when run needs human review.
+        if status == "needs_review":
+            from services.verification import verification_issues
+            issues = verification_issues(result.report, result.verifier_result)
+            self.run_store.create_review(run_id, issues)
         self._emit(
             run_id,
             "run.completed",

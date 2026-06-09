@@ -16,6 +16,8 @@ from models.schema import (
     AgentEvent,
     ArtifactRecord,
     EventType,
+    ReviewItem,
+    ReviewStatus,
     RunRecord,
     RunStatus,
     SourceRecord,
@@ -81,6 +83,25 @@ class RunStoreProtocol(Protocol):
     def list_sources(self, run_id: str) -> list[SourceRecord]: ...
 
     def create_sources(self, run_id: str, sources: list[Any]) -> list[SourceRecord]: ...
+
+    def create_review(self, run_id: str, issues: list[str], *, assigned_to: str | None = None) -> ReviewItem: ...
+
+    def get_review(self, review_id: str) -> ReviewItem: ...
+
+    def list_reviews(
+        self, *, status: ReviewStatus | None = None, run_id: str | None = None, limit: int = 50,
+    ) -> list[ReviewItem]: ...
+
+    def update_review(
+        self,
+        review_id: str,
+        *,
+        status: ReviewStatus | None = None,
+        assigned_to: str | None = None,
+        review_notes: str | None = None,
+    ) -> ReviewItem: ...
+
+    def get_review_by_run(self, run_id: str) -> ReviewItem | None: ...
 
 
 # ---------------------------------------------------------------------------

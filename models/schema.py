@@ -55,6 +55,7 @@ class ReportArtifact(BaseModel):
 
 
 RunStatus = Literal["queued", "running", "passed", "needs_review", "failed", "cancelled"]
+ReviewStatus = Literal["pending", "in_review", "approved", "rejected"]
 EventType = Literal[
     "run.created",
     "run.started",
@@ -110,6 +111,18 @@ class SourceRecord(BaseModel):
     snippet: str = ""
     confidence: Literal["high", "medium", "low"] = "medium"
     retrieved_at: Optional[str] = None
+
+
+class ReviewItem(BaseModel):
+    review_id: str
+    run_id: str
+    status: ReviewStatus = "pending"
+    issues: List[str] = Field(default_factory=list)
+    assigned_to: Optional[str] = None
+    review_notes: Optional[str] = None
+    created_at: str = ""
+    updated_at: str = ""
+    reviewed_at: Optional[str] = None
 
 
 class CreateRunRequest(BaseModel):
