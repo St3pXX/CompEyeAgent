@@ -12,10 +12,22 @@ services:
     envVars:
       - key: RUN_STORE_PATH
         value: /app/data/run_store.sqlite3
+      - key: COORDINATOR_STORE_PATH
+        value: /app/data/coordinator_store.sqlite3
+      - key: SOURCE_STORE_PATH
+        value: /app/data/source_store.sqlite3
+      - key: COMPETEYE_VECTOR_STORE_PATH
+        value: /app/data/vector_store
       - key: MIMO_BASE_URL
         value: https://api.xiaomimimo.com/v1
       - key: MIMO_API_KEY
         sync: false
+      - key: NEWS_API_KEY
+        sync: false
+      - key: GITHUB_TOKEN
+        sync: false
+      - key: REDDIT_USER_AGENT
+        value: CompEyeAgent/0.1
       - key: COLLECTOR_MODEL
         value: mimo-v2.5
       - key: ANALYZER_MODEL

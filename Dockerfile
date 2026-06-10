@@ -10,7 +10,10 @@ FROM python:3.12-slim AS runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    RUN_STORE_PATH=/app/data/run_store.sqlite3
+    RUN_STORE_PATH=/app/data/run_store.sqlite3 \
+    COORDINATOR_STORE_PATH=/app/data/coordinator_store.sqlite3 \
+    SOURCE_STORE_PATH=/app/data/source_store.sqlite3 \
+    COMPETEYE_VECTOR_STORE_PATH=/app/data/vector_store
 
 WORKDIR /app
 
@@ -28,4 +31,4 @@ RUN mkdir -p /app/data
 
 EXPOSE 8000
 
-CMD ["uvicorn", "api_app:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn api_app:app --host 0.0.0.0 --port ${PORT:-8000}"]

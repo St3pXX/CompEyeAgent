@@ -1,6 +1,6 @@
-# Phase 1.5 云部署说明
+# 云部署说明
 
-本文档用于部署 CompEye Agent 的 Phase 1.5 在线产品 Demo。当前部署形态是 FastAPI 同服务托管 React/Vite 静态资源，后端提供 `/api/*` 与 `/sse/*`，前端页面由同一个服务返回。
+本文档用于部署 CompEye Agent 的 Web App + FastAPI + MCP 相关后端能力。当前推荐部署形态是 FastAPI 同服务托管 React/Vite 静态资源，后端提供 `/api/*`、`/sse/*`、`/metrics`，前端页面由同一个服务返回。
 
 ## 1. 环境变量
 
@@ -15,6 +15,9 @@ MIMO_API_KEY=your_api_key_here
 
 ```bash
 RUN_STORE_PATH=/data/run_store.sqlite3
+COORDINATOR_STORE_PATH=/data/coordinator_store.sqlite3
+SOURCE_STORE_PATH=/data/source_store.sqlite3
+COMPETEYE_VECTOR_STORE_PATH=/data/vector_store
 COLLECTOR_MODEL=mimo-v2.5
 ANALYZER_MODEL=mimo-v2.5
 WRITER_MODEL=mimo-v2.5
@@ -23,8 +26,12 @@ VERIFIER_MODEL=mimo-v2.5-pro
 
 说明：
 
-- `RUN_STORE_PATH` 控制 SQLite run store 的位置。云端必须放在持久化磁盘或挂载卷中，否则应用重启或重新部署后历史任务、事件、报告索引会丢失。
-- 默认值是 `data/run_store.sqlite3`，适合本地开发，不适合作为无持久卷平台的唯一存储。
+- `RUN_STORE_PATH` 控制 SQLite run store 的位置。
+- `COORDINATOR_STORE_PATH` 控制 DAG / Scratchpad SQLite 存储位置。
+- `SOURCE_STORE_PATH` 控制来源层 SQLite 存储位置。
+- `COMPETEYE_VECTOR_STORE_PATH` 控制 ChromaDB 长期记忆目录。
+- 云端必须把这些路径放在持久化磁盘或挂载卷中，否则应用重启或重新部署后历史任务、事件、来源索引、DAG 状态和长期记忆会丢失。
+- 默认值在 `data/` 下，适合本地开发，不适合作为无持久卷平台的唯一存储。
 - `PORT` 通常由云平台自动注入；本地可以使用 `8000`。
 - 同服务部署时前端不需要 `VITE_API_BASE_URL`。只有前端和后端分开部署时，才需要在前端构建前设置 `VITE_API_BASE_URL=https://your-api-host`。
 
@@ -113,6 +120,9 @@ Environment variables：
 MIMO_BASE_URL=https://api.xiaomimimo.com/v1
 MIMO_API_KEY=your_api_key_here
 RUN_STORE_PATH=/data/run_store.sqlite3
+COORDINATOR_STORE_PATH=/data/coordinator_store.sqlite3
+SOURCE_STORE_PATH=/data/source_store.sqlite3
+COMPETEYE_VECTOR_STORE_PATH=/data/vector_store
 COLLECTOR_MODEL=mimo-v2.5
 ANALYZER_MODEL=mimo-v2.5
 WRITER_MODEL=mimo-v2.5
@@ -136,6 +146,9 @@ cd ..
 export MIMO_BASE_URL=https://api.xiaomimimo.com/v1
 export MIMO_API_KEY=your_api_key_here
 export RUN_STORE_PATH=/data/compeye/run_store.sqlite3
+export COORDINATOR_STORE_PATH=/data/compeye/coordinator_store.sqlite3
+export SOURCE_STORE_PATH=/data/compeye/source_store.sqlite3
+export COMPETEYE_VECTOR_STORE_PATH=/data/compeye/vector_store
 uvicorn api_app:app --host 0.0.0.0 --port 8000
 ```
 
