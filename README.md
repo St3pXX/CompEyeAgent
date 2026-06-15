@@ -112,7 +112,7 @@ flowchart TB
 
 ## 🚀 在线体验
 
-👉 **在线 Demo：** [https://compeyeagent.streamlit.app/](https://compeyeagent.streamlit.app/)
+👉 **在线 Demo：** [http://101.37.148.215](http://101.37.148.215)
 
 当前网页端已经提供产品化输入，不需要手写 JSON：
 
@@ -120,9 +120,9 @@ flowchart TB
 - 勾选分析维度，填写重点指标
 - 点击示例按钮一键填充演示案例
 - 点击开始分析后，可看到 Collector / Analyzer / Writer / Verifier 的阶段进度
-- 默认启用快速演示模式，只跑一次完整质检以缩短等待时间；关闭后会启用“失败自动重写一次”的严格复检链路
+- 任务完成后可查看完整 Markdown 报告、Verifier JSON、来源索引
 
-后续产品入口会从 Streamlit MVP 升级为：
+产品入口已升级为以 FastAPI 同服务托管的 React Web App 为主：
 
 - **Web App**：产品 Web 应用，承载产品介绍、全屏对话、Dashboard 和报告详情。
 - **MCP Server**：面向 Claude Code、Codex 等 Agent 工作台暴露竞品分析工具能力。
@@ -205,7 +205,7 @@ Coordinator DAG 调度器
 
 | 阶段 | 状态 | 核心目标 | 主要交付 |
 |------|------|----------|----------|
-| **Phase 1: 可运行 MVP** | ✅ 已完成 | 跑通真实多 Agent 竞品分析链路 | Streamlit 在线入口、CLI、CrewAI 顺序链路、MiMo 原生搜索、Verifier 质检、最小重写闭环、规则层 provenance guard |
+| **Phase 1: 可运行 MVP** | ✅ 已完成 | 跑通真实多 Agent 竞品分析链路 | CLI、CrewAI 顺序链路、MiMo 原生搜索、Verifier 质检、最小重写闭环、规则层 provenance guard |
 | **Phase 1.5: 在线产品 Demo** | ✅ 已完成 | 把当前可运行链路包装成可持续迭代的在线产品形态 | FastAPI 包装层、Web App（Demo / Dashboard / Report）、SSE 事件流、SQLite run store、前后端同服务托管、云部署配置文档 |
 | **Phase 2: 任务编排增强** | ✅ 已完成 | 增强后端任务编排、可观测数据源和实时事件推送 | 见下方 Phase 2 详细里程碑 |
 | **Phase 3: 企业级平台** | ✅ 已完成 | 提升稳定性、治理能力、可维护性和平台集成 | 见下方 Phase 3 详细里程碑 |
@@ -279,7 +279,6 @@ Coordinator DAG 调度器
 ```
 CompEyeAgent/
 ├── main.py                      # CLI 入口
-├── app.py                       # Streamlit 可选入口（Phase 1）
 ├── api_app.py                   # FastAPI 生产入口（API + SSE + 前端托管）
 ├── runner.py                    # Phase 1 运行器：质检校验 + 最小重写闭环
 ├── crew/

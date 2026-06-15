@@ -3,7 +3,6 @@ fastapi>=0.115.0
 httpx>=0.28.0
 langchain-openai>=0.3.0
 pydantic>=2.0.0
-streamlit>=1.30.0
 python-dotenv>=1.0.0
 litellm>=1.0.0
 crewai_tools>=0.60.0
