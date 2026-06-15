@@ -21,6 +21,14 @@ const STREAM_EVENTS = [
 export function DashboardPage() {
   const { runId } = useParams();
   const [run, setRun] = useState<RunRecord | null>(null);
+
+  if (!runId) {
+    return (
+      <section className="dashboard-page page-frame">
+        <div className="status-banner error-message">缺少 Run ID。请从 Demo 页面创建分析任务，或从概览页选择已有 Run。</div>
+      </section>
+    );
+  }
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [sources, setSources] = useState<SourceRecord[]>([]);

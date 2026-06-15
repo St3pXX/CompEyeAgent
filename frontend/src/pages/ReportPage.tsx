@@ -8,6 +8,14 @@ import { createJsonFilename, createMarkdownFilename, selectArtifacts } from "../
 export function ReportPage() {
   const { runId } = useParams();
   const [detail, setDetail] = useState<RunDetailResponse | null>(null);
+
+  if (!runId) {
+    return (
+      <section className="report-page page-frame">
+        <div className="status-banner error-message">缺少 Run ID。请从 Demo 页面创建分析任务，或从概览页选择已有 Run。</div>
+      </section>
+    );
+  }
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
