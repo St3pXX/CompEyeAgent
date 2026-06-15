@@ -21,14 +21,6 @@ const STREAM_EVENTS = [
 export function DashboardPage() {
   const { runId } = useParams();
   const [run, setRun] = useState<RunRecord | null>(null);
-
-  if (!runId) {
-    return (
-      <section className="dashboard-page page-frame">
-        <div className="status-banner error-message">缺少 Run ID。请从 Demo 页面创建分析任务，或从概览页选择已有 Run。</div>
-      </section>
-    );
-  }
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);
   const [sources, setSources] = useState<SourceRecord[]>([]);
@@ -38,32 +30,38 @@ export function DashboardPage() {
   const [error, setError] = useState<string | null>(null);
   const [streamStatus, setStreamStatus] = useState("connecting");
 
+  const id = runId ?? "";
+
   const loadRun = useCallback(async () => {
-    const detail = await getRun(runId);
+    if (!id) return;
+    const detail = await getRun(id);
     setRun(detail.run);
     setEvents(detail.events);
     setArtifacts(detail.artifacts);
     setSources(detail.sources);
-  }, [runId]);
+  }, [id]);
 
   const loadInspector = useCallback(async () => {
+    if (!id) return;
     const [nextDag, nextScratchpad, nextInspector] = await Promise.all([
-      getRunDag(runId),
-      listScratchpad(runId),
-      getRunInspector(runId)
+      getRunDag(id),
+      listScratchpad(id),
+      getRunInspector(id)
     ]);
     setDag(nextDag);
     setScratchpad(nextScratchpad);
     setInspector(nextInspector);
-  }, [runId]);
+  }, [id]);
 
   useEffect(() => {
+    if (!id) return;
     setError(null);
     Promise.all([loadRun(), loadInspector()]).catch((err) => setError(err instanceof Error ? err.message : "加载 run 失败"));
-  }, [loadInspector, loadRun]);
+  }, [loadInspector, loadRun, id]);
 
   useEffect(() => {
-    const source = openRunEventStream(runId);
+    if (!id) return;
+    const source = openRunEventStream(id);
     setStreamStatus("connected");
 
     function handleEvent(message: MessageEvent<string>) {
@@ -90,10 +88,18 @@ export function DashboardPage() {
       STREAM_EVENTS.forEach((eventName) => source.removeEventListener(eventName, handleEvent));
       source.close();
     };
-  }, [loadInspector, loadRun, runId]);
+  }, [loadInspector, loadRun, id]);
 
   const stages = useMemo(() => deriveStageStates(events), [events]);
   const selectedArtifacts = useMemo(() => selectArtifacts(artifacts), [artifacts]);
+
+  if (!runId) {
+    return (
+      <section className="dashboard-page page-frame">
+        <div className="status-banner error-message">缺少 Run ID。请从 Demo 页面创建分析任务，或从概览页选择已有 Run。</div>
+      </section>
+    );
+  }
 
   return (
     <section className="dashboard-page page-frame">
@@ -101,9 +107,9 @@ export function DashboardPage() {
         <div>
           <p className="eyebrow">Run Dashboard</p>
           <h1>Agent 执行追踪</h1>
-          <p>Run ID: {runId}</p>
+          <p>Run ID: {id}</p>
         </div>
-        <Link to={`/reports/${runId}`} className="button-link">查看报告</Link>
+        <Link to={`/reports/${id}`} className="button-link">查看报告</Link>
       </div>
 
       {error && <div className="status-banner error-message">加载失败：{error}</div>}
@@ -153,11 +159,11 @@ export function DashboardPage() {
             <strong>{sources.length}</strong>
           </div>
           <div className="artifact-actions">
-            <Link to={`/reports/${runId}`} className="button-link">查看报告页</Link>
+            <Link to={`/reports/${id}`} className="button-link">查看报告页</Link>
             <button
               className="button-link secondary"
               disabled={!selectedArtifacts.report}
-              onClick={() => selectedArtifacts.report && downloadTextFile(createMarkdownFilename(runId), selectedArtifacts.report.content, "text/markdown;charset=utf-8")}
+              onClick={() => selectedArtifacts.report && downloadTextFile(createMarkdownFilename(id), selectedArtifacts.report.content, "text/markdown;charset=utf-8")}
             >
               下载 Markdown
             </button>

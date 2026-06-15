@@ -8,6 +8,22 @@ import { createJsonFilename, createMarkdownFilename, selectArtifacts } from "../
 export function ReportPage() {
   const { runId } = useParams();
   const [detail, setDetail] = useState<RunDetailResponse | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const id = runId ?? "";
+
+  useEffect(() => {
+    if (!id) return;
+    setError(null);
+    getRun(id)
+      .then(setDetail)
+      .catch((err) => setError(err instanceof Error ? err.message : "加载报告失败"));
+  }, [id]);
+
+  const artifacts = useMemo(() => selectArtifacts(detail?.artifacts ?? []), [detail]);
+  const reportContent = artifacts.report?.content ?? "报告还未生成。请先到 Dashboard 查看任务执行状态。";
+  const verifierContent = artifacts.verifier?.content ?? "{}";
+  const briefContent = artifacts.brief?.content ?? "{}";
 
   if (!runId) {
     return (
@@ -16,19 +32,6 @@ export function ReportPage() {
       </section>
     );
   }
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setError(null);
-    getRun(runId)
-      .then(setDetail)
-      .catch((err) => setError(err instanceof Error ? err.message : "加载报告失败"));
-  }, [runId]);
-
-  const artifacts = useMemo(() => selectArtifacts(detail?.artifacts ?? []), [detail]);
-  const reportContent = artifacts.report?.content ?? "报告还未生成。请先到 Dashboard 查看任务执行状态。";
-  const verifierContent = artifacts.verifier?.content ?? "{}";
-  const briefContent = artifacts.brief?.content ?? "{}";
 
   return (
     <section className="report-page page-frame">
@@ -36,9 +39,9 @@ export function ReportPage() {
         <div>
           <p className="eyebrow">Report Detail</p>
           <h1>完整竞品分析报告</h1>
-          <p>Run ID: {runId}</p>
+          <p>Run ID: {id}</p>
         </div>
-        <Link to={`/dashboard/${runId}`} className="button-link secondary">查看 Dashboard</Link>
+        <Link to={`/dashboard/${id}`} className="button-link secondary">查看 Dashboard</Link>
       </div>
 
       {error && <div className="status-banner error-message">加载失败：{error}</div>}
@@ -51,14 +54,14 @@ export function ReportPage() {
             <button
               className="button-link"
               disabled={!artifacts.report}
-              onClick={() => artifacts.report && downloadTextFile(createMarkdownFilename(runId), artifacts.report.content, "text/markdown;charset=utf-8")}
+              onClick={() => artifacts.report && downloadTextFile(createMarkdownFilename(id), artifacts.report.content, "text/markdown;charset=utf-8")}
             >
               下载 Markdown
             </button>
             <button
               className="button-link secondary"
               disabled={!detail}
-              onClick={() => detail && downloadTextFile(createJsonFilename(runId, "artifacts"), JSON.stringify(detail, null, 2), "application/json;charset=utf-8")}
+              onClick={() => detail && downloadTextFile(createJsonFilename(id, "artifacts"), JSON.stringify(detail, null, 2), "application/json;charset=utf-8")}
             >
               下载 JSON
             </button>
