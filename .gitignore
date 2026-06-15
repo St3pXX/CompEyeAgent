@@ -44,10 +44,7 @@ ENV/
 # CrewAI / LangChain cache
 .cache/
 
-# Local demo runtime logs
-streamlit*.log
-
-# Local Phase 1.5 run store
+# Frontend dependencies and build output
 data/
 
 # Local brainstorming companion files
