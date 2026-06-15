@@ -18,10 +18,6 @@ export function AppShell({ children }: AppShellProps) {
         </NavLink>
         <nav className="nav-links" aria-label="Primary">
           <NavLink to="/overview">概览</NavLink>
-          <NavLink to="/demo">Demo</NavLink>
-          <NavLink to="/reviews">复核</NavLink>
-          <NavLink to="/costs">成本</NavLink>
-          <NavLink to="/dashboard/demo-run">Dashboard</NavLink>
         </nav>
         <span className="live-badge">Live</span>
       </header>

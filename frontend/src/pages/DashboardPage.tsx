@@ -19,7 +19,7 @@ const STREAM_EVENTS = [
 ];
 
 export function DashboardPage() {
-  const { runId = "demo-run" } = useParams();
+  const { runId } = useParams();
   const [run, setRun] = useState<RunRecord | null>(null);
   const [events, setEvents] = useState<AgentEvent[]>([]);
   const [artifacts, setArtifacts] = useState<ArtifactRecord[]>([]);

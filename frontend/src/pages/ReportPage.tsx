@@ -6,7 +6,7 @@ import type { RunDetailResponse } from "../api/types";
 import { createJsonFilename, createMarkdownFilename, selectArtifacts } from "../utils/runData";
 
 export function ReportPage() {
-  const { runId = "demo-run" } = useParams();
+  const { runId } = useParams();
   const [detail, setDetail] = useState<RunDetailResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
