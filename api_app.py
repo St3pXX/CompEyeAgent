@@ -22,11 +22,61 @@ from services.coordinator_foundation import CoordinatorFoundationService
 from services.evidence_service import EvidenceService
 from services.event_bus import EventBus
 from services.run_service import RunService
+import services.verification
 from services.telemetry import get_prometheus_content_type, get_prometheus_metrics, init_telemetry, record_run_created
 import services.llm_telemetry
 from storage.coordinator_store import SQLiteCoordinatorStore
 from storage.run_store import SQLiteRunStore, TERMINAL_STATUSES
 from storage.source_store import SQLiteSourceStore
+
+
+_backfill_done = False
+
+
+def _backfill_missing_reviews() -> None:
+    global _backfill_done
+    if _backfill_done:
+        return
+    _backfill_done = True
+    try:
+        runs = store.list_runs(limit=500)
+        for run in runs:
+            if run.status != "needs_review":
+                continue
+            existing = store.get_review_by_run(run.run_id)
+            if existing is not None:
+                continue
+            events = store.list_events(run.run_id)
+            issues = _extract_issues_from_events(events) or _extract_issues_from_artifacts(run.run_id)
+            if issues:
+                store.create_review(run.run_id, issues)
+            else:
+                store.create_review(run.run_id, ["质检未通过，详见 Dashboard 页面"])
+    except Exception:
+        pass
+
+
+def _extract_issues_from_events(events) -> list[str] | None:
+    for event in events:
+        payload = getattr(event, "payload", None)
+        if isinstance(payload, dict) and payload.get("passed") is False:
+            return None
+        if isinstance(payload, dict) and "issues" in payload:
+            return payload["issues"]
+    return None
+
+
+def _extract_issues_from_artifacts(run_id: str) -> list[str] | None:
+    try:
+        artifacts = store.list_artifacts(run_id)
+        for artifact in artifacts:
+            if artifact.kind == "verifier_json":
+                parsed = services.verification.parse_verifier_result(artifact.content)
+                if parsed:
+                    return parsed.get("issues", [])
+    except Exception:
+        pass
+    return None
 
 
 store = SQLiteRunStore()
@@ -85,6 +135,7 @@ if (FRONTEND_DIST / "assets").exists():
 
 @app.get("/health")
 def health() -> dict[str, str]:
+    _backfill_missing_reviews()
     return {"status": "ok"}
 
 

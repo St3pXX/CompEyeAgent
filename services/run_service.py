@@ -142,6 +142,12 @@ class RunService:
                 "provenance_index",
                 json.dumps([source.model_dump() for source in sources], ensure_ascii=False, indent=2),
             )
+            if status == "needs_review":
+                from services.verification import parse_verifier_result
+                parsed = parse_verifier_result(result.verifier_result)
+                _issues = parsed.get("issues", []) if parsed else []
+                if _issues:
+                    self.store.create_review(run_id, _issues)
             self.store.append_event(
                 run_id,
                 "artifact.ready",
