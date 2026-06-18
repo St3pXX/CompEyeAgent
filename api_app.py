@@ -23,6 +23,7 @@ from services.evidence_service import EvidenceService
 from services.event_bus import EventBus
 from services.run_service import RunService
 from services.telemetry import get_prometheus_content_type, get_prometheus_metrics, init_telemetry, record_run_created
+import services.llm_telemetry
 from storage.coordinator_store import SQLiteCoordinatorStore
 from storage.run_store import SQLiteRunStore, TERMINAL_STATUSES
 from storage.source_store import SQLiteSourceStore
@@ -66,6 +67,9 @@ if init_telemetry():
         FastAPIInstrumentor.instrument_app(app)
     except ImportError:
         pass
+
+# Register LLM token tracking callback
+services.llm_telemetry.register_litellm_callback()
 
 app.add_middleware(
     CORSMiddleware,
