@@ -252,10 +252,7 @@ Coordinator DAG 调度器
 | 文档 | 说明 |
 |------|------|
 | [docs/DESIGN.md](docs/DESIGN.md) | 完整架构设计（含 12 项优化详解、分阶段路线图） |
-| [docs/PHASE_1_5_PLAN.md](docs/PHASE_1_5_PLAN.md) | Phase 1.5 执行计划与 E2E 验证记录 |
-| [docs/PHASE_2_SOURCE_LAYER.md](docs/PHASE_2_SOURCE_LAYER.md) | 来源层设计：Connector 边界、刷新频率、证据综合规则 |
-| [docs/PHASE_2_COORDINATOR_FOUNDATION.md](docs/PHASE_2_COORDINATOR_FOUNDATION.md) | DAG / Scratchpad 基础模型和 API |
-| [docs/PHASE_2_COORDINATOR_LOOP.md](docs/PHASE_2_COORDINATOR_LOOP.md) | Coordinator 主循环、节点调度、重试行为 |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 云部署说明：环境变量、构建与启动命令、持久化要求 |
 
 ## 📋 输入格式
 
@@ -333,7 +330,7 @@ CompEyeAgent/
 
 完整的架构设计、12 项优化详细说明、分阶段路线图见 [docs/DESIGN.md](docs/DESIGN.md)。
 
-Phase 1.5 在线产品 Demo 的详细执行计划和当前进度见 [docs/PHASE_1_5_PLAN.md](docs/PHASE_1_5_PLAN.md)。
+Phase 1.5 在线产品 Demo 的详细执行计划见 [docs/DESIGN.md](docs/DESIGN.md) 第 5-6 节。
 
 Phase 2 各子里程碑的设计文档见上方 [Phase 2 详细里程碑](#phase-2-详细里程碑) 中的文档索引。
 
