@@ -44,7 +44,10 @@ def _backfill_missing_reviews() -> None:
             if run.status != "needs_review":
                 continue
             existing = store.get_review_by_run(run.run_id)
+            # If review exists and is approved, sync run status to passed
             if existing is not None:
+                if existing.status == "approved":
+                    store.update_run_status(run.run_id, "passed", completed=True)
                 continue
             events = store.list_events(run.run_id)
             issues = _extract_issues_from_events(events) or _extract_issues_from_artifacts(run.run_id)
@@ -336,7 +339,9 @@ class ReviewActionRequest(BaseModel):
 def approve_review(review_id: str, request: ReviewActionRequest | None = None) -> dict[str, object]:
     notes = request.notes if request else None
     try:
-        return {"review": store.update_review(review_id, status="approved", review_notes=notes)}
+        review = store.update_review(review_id, status="approved", review_notes=notes)
+        store.update_run_status(review.run_id, "passed", completed=True)
+        return {"review": review}
     except KeyError:
         raise HTTPException(status_code=404, detail="Review not found") from None
 
@@ -345,7 +350,9 @@ def approve_review(review_id: str, request: ReviewActionRequest | None = None) -
 def reject_review(review_id: str, request: ReviewActionRequest | None = None) -> dict[str, object]:
     notes = request.notes if request else None
     try:
-        return {"review": store.update_review(review_id, status="rejected", review_notes=notes)}
+        review = store.update_review(review_id, status="rejected", review_notes=notes)
+        # Keep run as needs_review so the user knows it still needs attention
+        return {"review": review}
     except KeyError:
         raise HTTPException(status_code=404, detail="Review not found") from None
 

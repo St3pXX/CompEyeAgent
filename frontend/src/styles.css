@@ -717,9 +717,10 @@ button:disabled,
   line-height: 1.7;
 }
 
-@media (max-width: 1080px) {
+@media (max-width: 720px) {
   .top-nav {
     grid-template-columns: 1fr auto;
+    padding: 0 14px;
   }
 
   .nav-links {
@@ -735,12 +736,6 @@ button:disabled,
 
   .demo-sidebar {
     display: none;
-  }
-}
-
-@media (max-width: 720px) {
-  .top-nav {
-    padding: 0 14px;
   }
 
   .chat-hero {
