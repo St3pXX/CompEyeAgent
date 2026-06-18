@@ -136,6 +136,11 @@ if (FRONTEND_DIST / "assets").exists():
     app.mount("/assets", StaticFiles(directory=FRONTEND_DIST / "assets"), name="frontend-assets")
 
 
+@app.on_event("startup")
+def _on_startup() -> None:
+    _backfill_missing_reviews()
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     _backfill_missing_reviews()
