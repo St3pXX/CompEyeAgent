@@ -65,14 +65,14 @@ class RunService:
 
             self._execute_legacy(run_id, allow_retry=allow_retry, run_analysis=run_analysis)
         finally:
-            # Capture token usage and attach to run.completed event
+            # Attach token metrics to all completed/failed runs
             tokens = services.llm_telemetry.get_token_metrics(run_id)
             if tokens.get("input_tokens") or tokens.get("output_tokens"):
                 self.store.append_event(
                     run_id,
-                    "run.completed",
-                    "分析任务已完成 (token usage captured)",
-                    agent="Coordinator",
+                    "tokens.captured",
+                    f"LLM token usage: {tokens['input_tokens']} in / {tokens['output_tokens']} out",
+                    agent="Telemetry",
                     payload={"tokens": tokens},
                 )
             services.llm_telemetry.set_current_run_id(None)
