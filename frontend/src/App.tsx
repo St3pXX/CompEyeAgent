@@ -12,9 +12,9 @@ export default function App() {
   return (
     <AppShell>
       <Routes>
-        <Route path="/" element={<Navigate to="/demo" replace />} />
+        <Route path="/" element={<Navigate to="/workbench" replace />} />
         <Route path="/overview" element={<OverviewPage />} />
-        <Route path="/demo" element={<DemoPage />} />
+        <Route path="/workbench" element={<DemoPage />} />
         <Route path="/reviews" element={<ReviewPage />} />
         <Route path="/costs" element={<CostPage />} />
         <Route path="/dashboard/:runId" element={<DashboardPage />} />
