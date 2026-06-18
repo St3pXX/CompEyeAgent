@@ -52,14 +52,14 @@ def _success_callback(
 
     with _lock:
         if run_id not in _token_metrics:
-            _token_metrics[run_id] = {"input_tokens": 0, "output_tokens": 0}
-        _token_metrics[run_id]["input_tokens"] += input_tokens
-        _token_metrics[run_id]["output_tokens"] += output_tokens
+            _token_metrics[run_id] = {"input": 0, "output": 0}
+        _token_metrics[run_id]["input"] += input_tokens
+        _token_metrics[run_id]["output"] += output_tokens
 
 
 def get_token_metrics(run_id: str) -> dict[str, int]:
     with _lock:
-        return _token_metrics.pop(run_id, {"input_tokens": 0, "output_tokens": 0})
+        return _token_metrics.pop(run_id, {"input": 0, "output": 0})
 
 
 def register_litellm_callback() -> None:

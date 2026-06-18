@@ -67,11 +67,11 @@ class RunService:
         finally:
             # Attach token metrics to all completed/failed runs
             tokens = services.llm_telemetry.get_token_metrics(run_id)
-            if tokens.get("input_tokens") or tokens.get("output_tokens"):
+            if tokens.get("input") or tokens.get("output"):
                 self.store.append_event(
                     run_id,
                     "tokens.captured",
-                    f"LLM token usage: {tokens['input_tokens']} in / {tokens['output_tokens']} out",
+                    f"LLM token usage: {tokens['input']} in / {tokens['output']} out",
                     agent="Telemetry",
                     payload={"tokens": tokens},
                 )
