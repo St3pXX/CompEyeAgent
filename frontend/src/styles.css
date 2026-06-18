@@ -112,6 +112,7 @@ p {
 
 .nav-links {
   display: flex;
+  align-items: center;
   gap: 16px;
   color: var(--muted);
   font-weight: 700;
