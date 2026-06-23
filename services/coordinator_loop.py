@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from typing import Any
 
 from models.coordinator import AssembledResult, DAGNode, NodeExecutionResult
@@ -34,6 +36,12 @@ STAGE_AGENT = {
     "rewrite": "Writer",
     "final": "Coordinator",
 }
+
+# Interval between "still generating…" heartbeat events emitted while a node's
+# LLM call is running. Keeps the streaming UI alive during long model calls.
+HEARTBEAT_INTERVAL_SECONDS = 8.0
+# Heartbeat payload marker; the frontend uses it to render these as low-emphasis.
+HEARTBEAT_KIND = "heartbeat"
 
 
 class CoordinatorLoopService:
@@ -228,15 +236,16 @@ class CoordinatorLoopService:
                 with trace_node(run_id, node.key, attempt=attempts):
                     node_start = time.monotonic()
                     timeout = node.metadata.get("timeout_seconds")
-                    result = run_with_timeout(
-                        executor,
-                        run_id=run_id,
-                        node=node,
-                        context=context,
-                        progress_callback=self._progress_callback(run_id),
-                        foundation=self.foundation,
-                        timeout_seconds=float(timeout) if timeout else None,
-                    )
+                    with self._heartbeat_during_node(run_id, node.key):
+                        result = run_with_timeout(
+                            executor,
+                            run_id=run_id,
+                            node=node,
+                            context=context,
+                            progress_callback=self._progress_callback(run_id),
+                            foundation=self.foundation,
+                            timeout_seconds=float(timeout) if timeout else None,
+                        )
                     record_node_duration(node.key, time.monotonic() - node_start)
                 self.foundation.record_stage_outputs(run_id, result.scratchpad_outputs)
                 if result.output_refs:
@@ -314,6 +323,38 @@ class CoordinatorLoopService:
             )
 
         return progress_callback
+
+    @contextmanager
+    def _heartbeat_during_node(self, run_id: str, stage: str) -> Iterator[None]:
+        """Emit a low-emphasis "still generating…" event every HEARTBEAT_INTERVAL_SECONDS.
+
+        Runs on a daemon thread while the wrapped LLM call is in flight, then
+        stops cleanly on exit (including on exception). EventBus.publish and
+        RunStore._connection are both thread-safe, so concurrent emission with
+        the executor thread is safe.
+        """
+        stop_event = threading.Event()
+
+        def beat() -> None:
+            # Wait once before the first beat so we don't fire immediately
+            # after the node's own "started" progress message.
+            while not stop_event.wait(HEARTBEAT_INTERVAL_SECONDS):
+                self._emit(
+                    run_id,
+                    "agent.progress",
+                    "正在生成中…",
+                    agent=STAGE_AGENT.get(stage, "Agent"),
+                    stage=stage,
+                    payload={"kind": HEARTBEAT_KIND},
+                )
+
+        thread = threading.Thread(target=beat, name=f"heartbeat-{run_id}-{stage}", daemon=True)
+        thread.start()
+        try:
+            yield
+        finally:
+            stop_event.set()
+            thread.join(timeout=HEARTBEAT_INTERVAL_SECONDS + 1)
 
     def _read_scratchpad(self, run_id: str, path: str) -> str:
         """Read a single scratchpad item by path, returning empty string if missing."""

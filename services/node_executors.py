@@ -38,6 +38,42 @@ def _truncate(text: str, max_chars: int = _UPSTREAM_TRUNCATE) -> str:
     return text[:max_chars] + "\n\n[... 内容已截断，完整数据见 Scratchpad ...]"
 
 
+def _count_evidence_items(raw_output: str) -> int:
+    """Best-effort count of evidence items in collect output (JSON array)."""
+    import json
+
+    try:
+        data = json.loads(raw_output)
+        if isinstance(data, list):
+            return len(data)
+    except Exception:
+        pass
+    return 0
+
+
+def _parse_verifier_verdict(raw_output: str) -> str:
+    """Extract a short human-readable verdict from verifier JSON output."""
+    import json
+
+    try:
+        data = json.loads(raw_output)
+        passed = data.get("passed")
+        confidence = data.get("confidence")
+        issues = data.get("issues") or []
+        parts: list[str] = []
+        if isinstance(passed, bool):
+            parts.append("通过" if passed else "未通过")
+        if isinstance(confidence, (int, float)):
+            parts.append(f"置信度 {confidence}")
+        if issues:
+            parts.append(f"{len(issues)} 个问题")
+        if parts:
+            return "、".join(parts)
+    except Exception:
+        pass
+    return "结果已生成"
+
+
 def _run_single_crew(agent: Any, task: Any, inputs: dict[str, Any], node_key: str = "unknown") -> str:
     """Create a single-agent single-task Crew and return the raw output."""
     from crewai import Crew
@@ -75,11 +111,13 @@ def _execute_collect(
     from crewai import Task
     from crew.agents.collector import collector
 
-    progress_callback("collect", "Collector 正在采集公开信息")
-
     input_data: CompetitorInput = context["input_data"]
     inputs = input_data.model_dump()
     inputs.setdefault("evidenceIndex", context.get("evidence_index", DEFAULT_EVIDENCE_INDEX))
+
+    competitors_desc = "、".join(input_data.competitors) or "未指定"
+    progress_callback("collect", f"Collector 启动：检索 Evidence Index 中关于 {competitors_desc} 的已有证据")
+    progress_callback("collect", "Evidence Index 检查完成，证据不足的部分将通过联网搜索补充")
 
     task = Task(
         description=(
@@ -111,6 +149,8 @@ def _execute_collect(
     )
 
     output = _run_single_crew(collector, task, inputs, node_key="collect")
+    evidence_count = _count_evidence_items(output)
+    progress_callback("collect", f"采集完成，共获取 {evidence_count} 条证据，已写入 Scratchpad")
     return NodeExecutionResult(
         output_refs=["collect/raw.json"],
         scratchpad_outputs={"collect/raw.json": output},
@@ -129,13 +169,15 @@ def _execute_analyze(
     from crewai import Task
     from crew.agents.analyzer import analyzer
 
-    progress_callback("analyze", "Analyzer 正在执行结构化分析")
+    progress_callback("analyze", "Analyzer 启动：读取 Collector 采集的原始数据")
 
     raw_data = _read_scratchpad(foundation, run_id, "collect/raw.json")
     if not raw_data:
         raise RuntimeError("collect/raw.json 不存在于 Scratchpad 中，无法执行分析")
 
     truncated = _truncate(raw_data)
+    analysis_type = context["input_data"].analysisType if "input_data" in context else "SWOT"
+    progress_callback("analyze", f"数据加载完成，正在生成 {analysis_type} 结构化结论（每条附 provenance）")
 
     task = Task(
         description=(
@@ -152,6 +194,7 @@ def _execute_analyze(
     )
 
     output = _run_single_crew(analyzer, task, {}, node_key="analyze")
+    progress_callback("analyze", "结构化分析完成，结论已写入 Scratchpad")
     return NodeExecutionResult(
         output_refs=["analyze/findings.json"],
         scratchpad_outputs={"analyze/findings.json": output},
@@ -170,13 +213,14 @@ def _execute_write(
     from crewai import Task
     from crew.agents.writer import writer
 
-    progress_callback("write", "Writer 正在撰写竞品分析报告")
+    progress_callback("write", "Writer 启动：读取 Analyzer 的结构化结论")
 
     findings = _read_scratchpad(foundation, run_id, "analyze/findings.json")
     if not findings:
         raise RuntimeError("analyze/findings.json 不存在于 Scratchpad 中，无法撰写报告")
 
     truncated = _truncate(findings)
+    progress_callback("write", "正在撰写 Markdown 报告，每条结论附 [来源: URL] 标注和 Provenance 索引")
 
     task = Task(
         description=(
@@ -194,6 +238,7 @@ def _execute_write(
     )
 
     output = _run_single_crew(writer, task, {}, node_key="write")
+    progress_callback("write", "报告撰写完成，已写入 Scratchpad")
     return NodeExecutionResult(
         output_refs=["write/report.md"],
         scratchpad_outputs={"write/report.md": output},
@@ -212,13 +257,14 @@ def _execute_verify(
     from crewai import Task
     from crew.agents.verifier import verifier
 
-    progress_callback("verify", "Verifier 正在检查报告证据")
+    progress_callback("verify", "Verifier 启动：独立校验报告草稿（不继承撰写者上下文）")
 
     report = _read_scratchpad(foundation, run_id, "write/report.md")
     if not report:
         raise RuntimeError("write/report.md 不存在于 Scratchpad 中，无法执行质检")
 
     truncated = _truncate(report)
+    progress_callback("verify", "正在检测逻辑矛盾、幻觉和缺失来源")
 
     task = Task(
         description=(
@@ -240,6 +286,8 @@ def _execute_verify(
     )
 
     output = _run_single_crew(verifier, task, {}, node_key="verify")
+    verdict = _parse_verifier_verdict(output)
+    progress_callback("verify", f"质检完成：{verdict}")
     return NodeExecutionResult(
         output_refs=["verify/verifier.json"],
         scratchpad_outputs={"verify/verifier.json": output},

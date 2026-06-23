@@ -173,5 +173,92 @@ class VerifyExecutorRequiresScratchpadTest(unittest.TestCase):
             self.assertIn("write/report.md", str(cm.exception))
 
 
+class ProgressCallbacksEmitMultipleStepsTest(unittest.TestCase):
+    """Each node executor should emit at least 2 progress events for streaming UX."""
+
+    def _make_foundation(self, tmpdir: str) -> CoordinatorFoundationService:
+        store = SQLiteCoordinatorStore(Path(tmpdir) / "coordinator.sqlite3")
+        return CoordinatorFoundationService(store)
+
+    def _make_input(self) -> CompetitorInput:
+        return CompetitorInput(
+            productName="飞书",
+            competitors=["钉钉"],
+            dimensions=[{"name": "定价", "indicators": ["免费套餐"]}],
+            analysisType="SWOT",
+        )
+
+    @patch("services.node_executors._run_single_crew", return_value='{"passed": true, "confidence": 90, "issues": []}')
+    def test_collect_emits_multiple_progress(self, _mock_crew: Mock) -> None:
+        from services.node_executors import _execute_collect
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            foundation = self._make_foundation(tmpdir)
+            progress = Mock()
+            node = DAGNode(run_id="run-1", key="collect", name="Collect", agent="Collector")
+            _execute_collect(
+                run_id="run-1", node=node,
+                context={"input_data": self._make_input(), "evidence_index": ""},
+                progress_callback=progress, foundation=foundation,
+            )
+            self.assertGreaterEqual(progress.call_count, 2)
+            # First call should carry stage "collect"
+            self.assertEqual(progress.call_args_list[0].args[0], "collect")
+
+    @patch("services.node_executors._run_single_crew", return_value='{"passed": true, "confidence": 90, "issues": []}')
+    def test_analyze_emits_multiple_progress(self, _mock_crew: Mock) -> None:
+        from services.node_executors import _execute_analyze
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            foundation = self._make_foundation(tmpdir)
+            foundation.write_scratchpad(
+                "run-1", ScratchpadWriteRequest(path="collect/raw.json", content='[{"competitor": "钉钉"}]')
+            )
+            progress = Mock()
+            node = DAGNode(run_id="run-1", key="analyze", name="Analyze", agent="Analyzer")
+            _execute_analyze(
+                run_id="run-1", node=node,
+                context={"input_data": self._make_input()},
+                progress_callback=progress, foundation=foundation,
+            )
+            self.assertGreaterEqual(progress.call_count, 2)
+
+    @patch("services.node_executors._run_single_crew", return_value="# 报告\n内容")
+    def test_write_emits_multiple_progress(self, _mock_crew: Mock) -> None:
+        from services.node_executors import _execute_write
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            foundation = self._make_foundation(tmpdir)
+            foundation.write_scratchpad(
+                "run-1", ScratchpadWriteRequest(path="analyze/findings.json", content='{"conclusions": []}')
+            )
+            progress = Mock()
+            node = DAGNode(run_id="run-1", key="write", name="Write", agent="Writer")
+            _execute_write(
+                run_id="run-1", node=node,
+                context={"input_data": self._make_input()},
+                progress_callback=progress, foundation=foundation,
+            )
+            self.assertGreaterEqual(progress.call_count, 2)
+
+    @patch("services.node_executors._run_single_crew", return_value='{"passed": true, "confidence": 90, "issues": []}')
+    def test_verify_emits_multiple_progress(self, _mock_crew: Mock) -> None:
+        from services.node_executors import _execute_verify
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            foundation = self._make_foundation(tmpdir)
+            foundation.write_scratchpad(
+                "run-1", ScratchpadWriteRequest(path="write/report.md", content="# 报告")
+            )
+            progress = Mock()
+            node = DAGNode(run_id="run-1", key="verify", name="Verify", agent="Verifier")
+            _execute_verify(
+                run_id="run-1", node=node,
+                context={"input_data": self._make_input()},
+                progress_callback=progress, foundation=foundation,
+            )
+            self.assertGreaterEqual(progress.call_count, 2)
+
+
 if __name__ == "__main__":
     unittest.main()
