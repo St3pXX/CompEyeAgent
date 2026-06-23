@@ -1,8 +1,10 @@
-import { FormEvent, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 
-import { createRun } from "../api/client";
-import type { AnalysisType, RunRecord } from "../api/types";
+import { createRun, getRun, openRunEventStream } from "../api/client";
+import type { AgentEvent, AnalysisType, ArtifactRecord, RunRecord } from "../api/types";
+import { MarkdownView } from "../components/MarkdownView";
+import { StreamMessage } from "../components/StreamMessage";
 import { buildCreateRunRequest, DEFAULT_BRIEF, splitList, type ClarifiedBrief } from "../utils/runData";
 
 const examples: Array<{ title: string; desc: string; tag: AnalysisType; brief: ClarifiedBrief }> = [
@@ -40,15 +42,78 @@ const examples: Array<{ title: string; desc: string; tag: AnalysisType; brief: C
   }
 ];
 
+/** SSE event types we accumulate into the streaming conversation view. */
+const STREAM_EVENTS = [
+  "run.started",
+  "agent.started",
+  "agent.progress",
+  "agent.completed",
+  "agent.retrying",
+  "artifact.ready",
+  "run.completed",
+  "run.failed",
+  "run.cancelled",
+];
+
+function mergeEvents(current: AgentEvent[], next: AgentEvent) {
+  if (current.some((event) => event.event_id === next.event_id)) {
+    return current;
+  }
+  return [...current, next].sort((a, b) => a.event_id - b.event_id);
+}
+
 export function DemoPage() {
-  const navigate = useNavigate();
   const [prompt, setPrompt] = useState("帮我分析飞书相对钉钉和企业微信，在 AI 办公协同上的机会");
   const [brief, setBrief] = useState<ClarifiedBrief>(DEFAULT_BRIEF);
   const [createdRun, setCreatedRun] = useState<RunRecord | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [streamEvents, setStreamEvents] = useState<AgentEvent[]>([]);
+  const [streamLive, setStreamLive] = useState(false);
+  const [report, setReport] = useState<ArtifactRecord | null>(null);
 
   const payloadPreview = useMemo(() => buildCreateRunRequest(brief), [brief]);
+
+  const loadReport = useCallback(async (runId: string) => {
+    try {
+      const detail = await getRun(runId);
+      const found = detail.artifacts.filter((artifact) => artifact.kind === "report_markdown").at(-1);
+      if (found) setReport(found);
+    } catch {
+      // non-fatal: report may not be ready yet
+    }
+  }, []);
+
+  // Subscribe to SSE for the created run.
+  useEffect(() => {
+    if (!createdRun) return;
+    const runId = createdRun.run_id;
+    setStreamEvents([]);
+    setReport(null);
+    setStreamLive(true);
+
+    const source = openRunEventStream(runId);
+
+    function handleEvent(message: MessageEvent<string>) {
+      const event = JSON.parse(message.data) as AgentEvent;
+      setStreamEvents((current) => mergeEvents(current, event));
+      if (event.type === "artifact.ready" || event.type === "run.completed") {
+        loadReport(runId).catch(() => undefined);
+      }
+    }
+
+    STREAM_EVENTS.forEach((eventName) => source.addEventListener(eventName, handleEvent));
+    source.addEventListener("stream.closed", () => {
+      setStreamLive(false);
+      source.close();
+    });
+    source.onerror = () => setStreamLive(false);
+
+    return () => {
+      STREAM_EVENTS.forEach((eventName) => source.removeEventListener(eventName, handleEvent));
+      source.close();
+    };
+  }, [createdRun, loadReport]);
 
   async function handleCreateRun(event: FormEvent) {
     event.preventDefault();
@@ -57,7 +122,6 @@ export function DemoPage() {
     try {
       const response = await createRun(payloadPreview);
       setCreatedRun(response.run);
-      navigate(`/dashboard/${response.run.run_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "创建任务失败");
     } finally {
@@ -70,12 +134,23 @@ export function DemoPage() {
     setPrompt(`帮我分析${nextBrief.productName}，竞品包括${nextBrief.competitorsText}`);
     setCreatedRun(null);
     setError(null);
+    setStreamEvents([]);
+    setReport(null);
+    setStreamLive(false);
+  }
+
+  function startNewChat() {
+    setCreatedRun(null);
+    setStreamEvents([]);
+    setReport(null);
+    setStreamLive(false);
+    setError(null);
   }
 
   return (
     <section className="demo-layout">
       <aside className="demo-sidebar">
-        <button className="new-chat-button" onClick={() => setCreatedRun(null)}>+ 新对话</button>
+        <button className="new-chat-button" onClick={startNewChat}>+ 新对话</button>
         <div className="sidebar-section">
           <p className="section-label">快捷入口</p>
           <div className="sidebar-item active">探索竞品</div>
@@ -165,16 +240,32 @@ export function DemoPage() {
             </article>
           )}
           {createdRun && (
-            <article className="message result-message">
-              <div>
-                <strong>任务已创建</strong>
-                <p>Run ID: {createdRun.run_id}。Dashboard 会实时展示 Agent 执行过程。</p>
-              </div>
-              <div className="result-actions">
-                <Link to={`/dashboard/${createdRun.run_id}`} className="button-link">打开 Dashboard</Link>
-                <Link to={`/reports/${createdRun.run_id}`} className="button-link secondary">查看报告</Link>
-              </div>
-            </article>
+            <>
+              <StreamMessage agent="CompEye" events={streamEvents} live={streamLive}>
+                {report && (
+                  <div className="stream-report">
+                    <p className="eyebrow">竞品分析报告</p>
+                    <MarkdownView content={report.content} />
+                    <div className="result-actions">
+                      <Link to={`/dashboard/${createdRun.run_id}`} className="button-link">打开 Dashboard</Link>
+                      <Link to={`/reports/${createdRun.run_id}`} className="button-link secondary">查看报告</Link>
+                    </div>
+                  </div>
+                )}
+              </StreamMessage>
+              {!report && (
+                <article className="message result-message">
+                  <div>
+                    <strong>任务进行中</strong>
+                    <p>Run ID: {createdRun.run_id}。Agent 进度正在上方实时更新，完成后报告会显示在此处。</p>
+                  </div>
+                  <div className="result-actions">
+                    <Link to={`/dashboard/${createdRun.run_id}`} className="button-link">打开 Dashboard</Link>
+                    <Link to={`/reports/${createdRun.run_id}`} className="button-link secondary">查看报告</Link>
+                  </div>
+                </article>
+              )}
+            </>
           )}
         </div>
 

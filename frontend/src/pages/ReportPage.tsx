@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { downloadTextFile, getRun } from "../api/client";
 import type { RunDetailResponse } from "../api/types";
+import { MarkdownView } from "../components/MarkdownView";
 import { createJsonFilename, createMarkdownFilename, selectArtifacts } from "../utils/runData";
 
 export function ReportPage() {
@@ -49,7 +50,7 @@ export function ReportPage() {
       <div className="report-grid">
         <article className="report-body">
           <p className="eyebrow">Markdown Report</p>
-          <pre className="markdown-report">{reportContent}</pre>
+          <MarkdownView content={reportContent} className="markdown-report" />
           <div className="download-row">
             <button
               className="button-link"

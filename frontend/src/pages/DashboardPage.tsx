@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 
 import { downloadTextFile, getRun, getRunDag, getRunInspector, listScratchpad, openRunEventStream } from "../api/client";
 import type { AgentEvent, ArtifactRecord, DAGView, InspectorSummary, RunRecord, ScratchpadItem, SourceRecord } from "../api/types";
+import { StreamMessage } from "../components/StreamMessage";
 import { createMarkdownFilename, deriveStageStates, selectArtifacts } from "../utils/runData";
 
 const STREAM_EVENTS = [
@@ -113,6 +114,20 @@ export function DashboardPage() {
       </div>
 
       {error && <div className="status-banner error-message">加载失败：{error}</div>}
+
+      {events.length > 0 && (
+        <section className="panel-card dashboard-stream">
+          <div className="panel-heading">
+            <h2>Agent 实时对话</h2>
+            <span className="live-badge">{streamStatus}</span>
+          </div>
+          <StreamMessage
+            agent="CompEye"
+            events={events}
+            live={(run?.status === "running" || run?.status === "queued") && streamStatus !== "closed"}
+          />
+        </section>
+      )}
 
       <div className="dashboard-grid">
         <aside className="panel-card">
