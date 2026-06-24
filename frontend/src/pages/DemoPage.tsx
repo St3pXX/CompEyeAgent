@@ -7,6 +7,13 @@ import { MarkdownView } from "../components/MarkdownView";
 import { StreamMessage } from "../components/StreamMessage";
 import { buildCreateRunRequest, DEFAULT_BRIEF, splitList, type ClarifiedBrief } from "../utils/runData";
 
+/** Sidebar quick actions: clicking prefills the prompt textarea for editing. */
+const QUICK_ACTIONS: Array<{ label: string; prompt: string }> = [
+  { label: "探索竞品", prompt: "帮我探索飞书所在市场的竞品有哪些，各自的核心定位是什么" },
+  { label: "发现分析维度", prompt: "帮我梳理分析飞书 vs 钉钉、企业微信时，应该重点对比哪些维度和指标" },
+  { label: "生成报告", prompt: "基于当前 brief 生成一份竞品分析报告，包含来源标注" },
+];
+
 const examples: Array<{ title: string; desc: string; tag: AnalysisType; brief: ClarifiedBrief }> = [
   {
     title: "飞书 AI 办公竞品分析",
@@ -153,9 +160,15 @@ export function DemoPage() {
         <button className="new-chat-button" onClick={startNewChat}>+ 新对话</button>
         <div className="sidebar-section">
           <p className="section-label">快捷入口</p>
-          <div className="sidebar-item active">探索竞品</div>
-          <div className="sidebar-item">发现分析维度</div>
-          <div className="sidebar-item">生成报告</div>
+          {QUICK_ACTIONS.map((action, index) => (
+            <button
+              className={`sidebar-item${index === 0 ? " active" : ""}`}
+              key={action.label}
+              onClick={() => setPrompt(action.prompt)}
+            >
+              {action.label}
+            </button>
+          ))}
         </div>
         <div className="sidebar-section">
           <p className="section-label">快捷案例</p>
