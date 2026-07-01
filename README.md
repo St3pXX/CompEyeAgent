@@ -295,7 +295,6 @@ pytest
 | [docs/DESIGN.md](docs/DESIGN.md) | 完整架构设计、分阶段路线图 |
 | [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | 云部署说明 |
 | [docs/MIGRATION.md](docs/MIGRATION.md) | CrewAI → LangGraph 迁移指南 |
-| [docs/superpowers/](docs/superpowers/) | 开发辅助工具 |
 
 ## 许可证
 
