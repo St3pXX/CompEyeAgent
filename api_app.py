@@ -115,6 +115,10 @@ app = FastAPI(
 # Register LLM token tracking callback
 services.llm_telemetry.register_litellm_callback()
 
+# Enable Langfuse observability if configured (no-op without LANGFUSE_* keys)
+from services.langfuse_client import init_langfuse
+init_langfuse()
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
