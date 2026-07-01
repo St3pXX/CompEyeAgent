@@ -1,0 +1,81 @@
+# CompEyeAgent + Langfuse 自托管 — 一键部署
+#
+#   docker compose up -d          # 全部启动
+#   docker compose up -d compeye  # 仅 CompEyeAgent（不启动 Langfuse）
+#
+# CompEyeAgent :8000   Langfuse UI :3000（仅建议内网访问）
+
+services:
+  compeye:
+    build: .
+    ports:
+      - "${COMPEYE_PORT:-8000}:8000"
+    volumes:
+      - compeye_data:/app/data
+    environment:
+      - MIMO_BASE_URL=${MIMO_BASE_URL:-https://api.xiaomimimo.com/v1}
+      - MIMO_API_KEY=${MIMO_API_KEY}
+      - RUN_STORE_PATH=/app/data/run_store.sqlite3
+      - COORDINATOR_STORE_PATH=/app/data/coordinator_store.sqlite3
+      - SOURCE_STORE_PATH=/app/data/source_store.sqlite3
+      - COMPETEYE_VECTOR_STORE_PATH=/app/data/vector_store
+      - COMPETEYE_CHECKPOINT_PATH=/app/data/graph_checkpoints.sqlite3
+      - COMPETEYE_EMBEDDING_MODEL=${COMPETEYE_EMBEDDING_MODEL:-BAAI/bge-base-zh-v1.5}
+      - COLLECTOR_MODEL=${COLLECTOR_MODEL:-mimo-v2.5}
+      - ANALYZER_MODEL=${ANALYZER_MODEL:-mimo-v2.5}
+      - WRITER_MODEL=${WRITER_MODEL:-mimo-v2.5}
+      - VERIFIER_MODEL=${VERIFIER_MODEL:-mimo-v2.5-pro}
+      # Langfuse（可选，不配置则 LLM 追踪关闭）
+      - LANGFUSE_HOST=${LANGFUSE_HOST:-http://langfuse:3000}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY:-}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY:-}
+    restart: unless-stopped
+    depends_on:
+      langfuse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ──── Langfuse 自托管 ────
+  langfuse:
+    image: langfuse/langfuse:latest
+    ports:
+      - "127.0.0.1:3000:3000"   # 仅本机访问；公开请改为 "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://langfuse:langfuse@langfuse-db:5432/langfuse
+      - NEXTAUTH_SECRET=${LANGFUSE_AUTH_SECRET:-changeme-change-to-random-string}
+      - NEXTAUTH_URL=${LANGFUSE_AUTH_URL:-http://localhost:3000}
+      - SALT=${LANGFUSE_SALT:-changeme-change-to-random-string}
+      - TELEMETRY_ENABLED=${LANGFUSE_TELEMETRY:-false}
+      - LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES=${LANGFUSE_EXPERIMENTAL:-false}
+    restart: unless-stopped
+    depends_on:
+      langfuse-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/public/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  langfuse-db:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=langfuse
+      - POSTGRES_PASSWORD=langfuse
+      - POSTGRES_DB=langfuse
+    volumes:
+      - langfuse_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  compeye_data:
+  langfuse_pgdata:

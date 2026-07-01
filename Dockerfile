@@ -13,7 +13,9 @@ ENV PYTHONUNBUFFERED=1 \
     RUN_STORE_PATH=/app/data/run_store.sqlite3 \
     COORDINATOR_STORE_PATH=/app/data/coordinator_store.sqlite3 \
     SOURCE_STORE_PATH=/app/data/source_store.sqlite3 \
-    COMPETEYE_VECTOR_STORE_PATH=/app/data/vector_store
+    COMPETEYE_VECTOR_STORE_PATH=/app/data/vector_store \
+    COMPETEYE_CHECKPOINT_PATH=/app/data/graph_checkpoints.sqlite3 \
+    COMPETEYE_EMBEDDING_MODEL=BAAI/bge-base-zh-v1.5
 
 WORKDIR /app
 
