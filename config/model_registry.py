@@ -94,8 +94,50 @@ class ModelRegistry:
             f"All model providers failed for role '{role}':\n" + "\n".join(errors)
         )
 
+    def create_llm_client(self, role: str) -> Any:
+        """Create an :class:`LLMClient`, trying providers in priority order.
 
-def _create_llm_from_provider(provider: ModelProvider) -> Any:
+        litellm-backed replacement for :meth:`create_llm`.  Skips providers
+        whose circuit breaker is open; raises RuntimeError if all are exhausted.
+        """
+        providers = self.get_providers(role)
+        if not providers:
+            raise RuntimeError(f"No model providers registered for role '{role}'")
+
+        errors: list[str] = []
+        for provider in providers:
+            cb = get_circuit_breaker(provider.name)
+            try:
+                cb.check()
+            except CircuitOpenError as e:
+                errors.append(str(e))
+                continue
+
+            try:
+                return _create_llm_client_from_provider(provider)
+            except Exception as e:
+                cb.record_failure()
+                errors.append(f"{provider.name}/{provider.model_name}: {e}")
+                continue
+
+        raise RuntimeError(
+            f"All model providers failed for role '{role}':\n" + "\n".join(errors)
+        )
+
+
+def _create_llm_client_from_provider(provider: ModelProvider) -> Any:
+    """Create an :class:`LLMClient` from a ModelProvider config."""
+    from services.llm_client import LLMClient
+
+    return LLMClient(
+        base_url=provider.base_url,
+        api_key=provider.api_key,
+        model=provider.model_name,
+        temperature=provider.temperature,
+        top_p=provider.top_p,
+        max_completion_tokens=provider.max_completion_tokens,
+        extra_body=provider.extra_body,
+    )
     """Create a CrewAI LLM instance from a ModelProvider config."""
     from crewai import LLM
 

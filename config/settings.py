@@ -32,6 +32,10 @@ def create_llm(model_name: str) -> LLM:
 
     This is the simple single-provider factory.  For multi-model fallback,
     use ``create_llm_for_role()`` instead.
+
+    .. deprecated::
+        Superseded by :func:`create_llm_client` (litellm-backed ``LLMClient``)
+        as part of the LangGraph migration.  Kept while CrewAI agents still exist.
     """
     from crewai import LLM
 
@@ -47,6 +51,21 @@ def create_llm(model_name: str) -> LLM:
         top_p=0.95,
         max_completion_tokens=2048,
         extra_body={"thinking": {"type": "disabled"}},
+    )
+
+
+def create_llm_client(model_name: str):
+    """Create an :class:`~services.llm_client.LLMClient` for the MiMo endpoint.
+
+    litellm-backed replacement for :func:`create_llm`.  For multi-model
+    fallback use :func:`create_llm_client_for_role`.
+    """
+    from services.llm_client import LLMClient
+
+    return LLMClient(
+        base_url=MIMO_BASE_URL,
+        api_key=MIMO_API_KEY,
+        model=model_name,
     )
 
 
@@ -78,6 +97,20 @@ def create_llm_for_role(role: str):
     # Fallback: use the legacy single-provider factory
     role_model = ROLE_MODELS.get(role, "mimo-v2.5")
     return create_llm(role_model)
+
+
+def create_llm_client_for_role(role: str):
+    """Create an :class:`LLMClient` for *role* using the registry with fallback.
+
+    litellm-backed replacement for :func:`create_llm_for_role`.  Falls back to
+    :func:`create_llm_client` if the registry has no providers for *role*.
+    """
+    registry = get_model_registry()
+    providers = registry.get_providers(role)
+    if providers:
+        return registry.create_llm_client(role)
+    role_model = ROLE_MODELS.get(role, "mimo-v2.5")
+    return create_llm_client(role_model)
 
 
 # Model assignments (backward compatible)
