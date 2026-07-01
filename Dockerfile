@@ -30,13 +30,13 @@ RUN rm -f /etc/apt/sources.list.d/*.sources \
     && rm -rf /var/lib/apt/lists/*
 
 # Install core Python dependencies.
-# sentence-transformers (~2GB with torch/CUDA) is NOT included — install it
-# separately on the host if semantic vector search is needed.  The vector store
-# falls back to a 768-dim hash embedding when the model isn't available.
+# fastembed (~50MB ONNX Runtime + ~33MB bge model) provides semantic embeddings
+# with no PyTorch/CUDA dependency.  The vector store falls back to a 512-dim
+# hash embedding when the model isn't available.
 RUN pip install --no-cache-dir \
     fastapi httpx pydantic python-dotenv pyyaml litellm \
     langgraph langgraph-checkpoint-sqlite langfuse \
-    uvicorn chromadb mcp
+    fastembed uvicorn chromadb mcp
 
 COPY . .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
