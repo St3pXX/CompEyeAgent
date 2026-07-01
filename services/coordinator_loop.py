@@ -15,15 +15,6 @@ from services.coordinator_foundation import CoordinatorFoundationService
 from services.event_bus import EventBus
 from services.source_indexer import extract_source_references
 from services.resilience import run_with_timeout
-from services.telemetry import (
-    record_event,
-    record_node_duration,
-    record_node_retry,
-    record_run_completed,
-    record_run_started,
-    trace_node,
-    trace_run,
-)
 from services.verification import verification_issues
 from storage.protocols import RunStoreProtocol
 
@@ -64,7 +55,6 @@ class CoordinatorLoopService:
     ) -> None:
         """Dual-write: persist to SQLite, then push to in-memory event bus."""
         stored = self.run_store.append_event(run_id, event_type, message, agent=agent, stage=stage, payload=payload)
-        record_event(event_type)
         if self._event_bus is not None:
             self._event_bus.publish(run_id, {
                 "event_id": stored.event_id,
@@ -96,25 +86,20 @@ class CoordinatorLoopService:
         self._event_bus = event_bus
         self.foundation.ensure_default_dag(run_id, input_data.model_dump())
         self.run_store.update_run_status(run_id, "running")
-        record_run_started()
         self._emit(run_id, "run.started", "Coordinator 主循环开始执行", agent="Coordinator")
-        run_start = time.monotonic()
 
         try:
-            with trace_run(run_id):
-                result = self._execute_dag(
-                    run_id,
-                    input_data=input_data,
-                    allow_retry=allow_retry,
-                    evidence_index=evidence_index,
-                    run_analysis=run_analysis,
-                    node_executor=node_executor,
-                    memory_context=memory_context,
-                )
+            result = self._execute_dag(
+                run_id,
+                input_data=input_data,
+                allow_retry=allow_retry,
+                evidence_index=evidence_index,
+                run_analysis=run_analysis,
+                node_executor=node_executor,
+                memory_context=memory_context,
+            )
             self._persist_success(run_id, input_data, result)
-            record_run_completed("passed" if result.passed else "needs_review", time.monotonic() - run_start)
         except Exception as exc:
-            record_run_completed("failed", time.monotonic() - run_start)
             self.run_store.update_run_status(run_id, "failed", error=str(exc), completed=True)
             self._emit(
                 run_id,
@@ -233,20 +218,17 @@ class CoordinatorLoopService:
                 payload={"attempt": attempts, "max_retries": max_retries},
             )
             try:
-                with trace_node(run_id, node.key, attempt=attempts):
-                    node_start = time.monotonic()
-                    timeout = node.metadata.get("timeout_seconds")
-                    with self._heartbeat_during_node(run_id, node.key):
-                        result = run_with_timeout(
-                            executor,
-                            run_id=run_id,
-                            node=node,
-                            context=context,
-                            progress_callback=self._progress_callback(run_id),
-                            foundation=self.foundation,
-                            timeout_seconds=float(timeout) if timeout else None,
-                        )
-                    record_node_duration(node.key, time.monotonic() - node_start)
+                timeout = node.metadata.get("timeout_seconds")
+                with self._heartbeat_during_node(run_id, node.key):
+                    result = run_with_timeout(
+                        executor,
+                        run_id=run_id,
+                        node=node,
+                        context=context,
+                        progress_callback=self._progress_callback(run_id),
+                        foundation=self.foundation,
+                        timeout_seconds=float(timeout) if timeout else None,
+                    )
                 self.foundation.record_stage_outputs(run_id, result.scratchpad_outputs)
                 if result.output_refs:
                     current = self.foundation.store.get_node(run_id, node.key)
@@ -268,7 +250,6 @@ class CoordinatorLoopService:
             except Exception as exc:
                 self.foundation.update_node_metadata(run_id, node.key, {"last_error": str(exc)})
                 if attempts <= max_retries:
-                    record_node_retry(node.key)
                     self._emit(
                         run_id,
                         "agent.retrying",

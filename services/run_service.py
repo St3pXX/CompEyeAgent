@@ -80,7 +80,7 @@ class RunService:
     def _execute_with_coordinator(
         self, run_id: str, run: RunRecord, allow_retry: bool, run_analysis: Any, *, event_bus: EventBus | None = None,
     ) -> None:
-        from services.node_executors import per_node_executor
+        from services.graph_node_executor import graph_per_node_executor
 
         # Query long-term memory for relevant historical facts.
         memory_context = ""
@@ -95,7 +95,7 @@ class RunService:
             allow_retry=allow_retry,
             evidence_index=self._evidence_index_for_input(run.input),
             run_analysis=run_analysis,
-            node_executor=per_node_executor,
+            node_executor=graph_per_node_executor,
             event_bus=event_bus,
             memory_context=memory_context,
         )
@@ -181,7 +181,7 @@ class RunService:
             raise RuntimeError("Coordinator loop is not configured")
 
         from runner import run_analysis
-        from services.node_executors import per_node_executor
+        from services.graph_node_executor import graph_per_node_executor
 
         self.coordinator_loop.retry_node(
             run_id,
@@ -190,7 +190,7 @@ class RunService:
             allow_retry=allow_retry,
             evidence_index=self._evidence_index_for_input(run.input),
             run_analysis=run_analysis,
-            node_executor=per_node_executor,
+            node_executor=graph_per_node_executor,
             event_bus=event_bus,
         )
         return self.store.get_run(run_id)

@@ -183,7 +183,7 @@ class CoordinatorFoundationTest(unittest.TestCase):
                 }
                 return NodeExecutionResult(scratchpad_outputs=outputs.get(node.key, {}))
 
-            with patch("services.node_executors.per_node_executor", side_effect=fake_executor):
+            with patch("services.graph_node_executor.graph_per_node_executor", side_effect=fake_executor):
                 service.execute_run(run.run_id)
 
             paths = {item.path for item in coordinator_service.list_scratchpad(run.run_id)}
@@ -228,7 +228,7 @@ class CoordinatorFoundationTest(unittest.TestCase):
                 }
                 return NodeExecutionResult(scratchpad_outputs=outputs.get(node.key, {}))
 
-            with patch("services.node_executors.per_node_executor", side_effect=fake_executor):
+            with patch("services.graph_node_executor.graph_per_node_executor", side_effect=fake_executor):
                 service.execute_run(run.run_id)
 
             events = run_store.list_events(run.run_id)
@@ -246,7 +246,7 @@ class CoordinatorFoundationTest(unittest.TestCase):
             service = RunService(run_store, coordinator_service=coordinator_service)
             run = service.create_run(CompetitorInput(productName="飞书", competitors=["钉钉"], dimensions=[]))
 
-            with patch("services.node_executors.per_node_executor", side_effect=RuntimeError("boom")):
+            with patch("services.graph_node_executor.graph_per_node_executor", side_effect=RuntimeError("boom")):
                 service.execute_run(run.run_id)
 
             statuses = {node.key: node.status for node in coordinator_store.list_nodes(run.run_id)}

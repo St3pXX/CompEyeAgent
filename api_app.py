@@ -23,7 +23,6 @@ from services.evidence_service import EvidenceService
 from services.event_bus import EventBus
 from services.run_service import RunService
 import services.verification
-from services.telemetry import get_prometheus_content_type, get_prometheus_metrics, init_telemetry, record_run_created
 import services.llm_telemetry
 from storage.coordinator_store import SQLiteCoordinatorStore
 from storage.run_store import SQLiteRunStore, TERMINAL_STATUSES
@@ -113,16 +112,12 @@ app = FastAPI(
     version="1.5.0",
 )
 
-# Initialize OpenTelemetry (no-op if COMPETEYE_OTEL_ENABLED != "true")
-if init_telemetry():
-    try:
-        from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
-        FastAPIInstrumentor.instrument_app(app)
-    except ImportError:
-        pass
-
 # Register LLM token tracking callback
 services.llm_telemetry.register_litellm_callback()
+
+# Enable Langfuse observability if configured (no-op without LANGFUSE_* keys)
+from services.langfuse_client import init_langfuse
+init_langfuse()
 
 app.add_middleware(
     CORSMiddleware,
@@ -147,19 +142,9 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/metrics")
-def metrics_endpoint() -> StreamingResponse:
-    """Prometheus-compatible metrics endpoint."""
-    return StreamingResponse(
-        iter([get_prometheus_metrics()]),
-        media_type=get_prometheus_content_type(),
-    )
-
-
 @app.post("/api/runs", response_model=CreateRunResponse, status_code=202)
 def create_run(request: CreateRunRequest, background_tasks: BackgroundTasks) -> CreateRunResponse:
     run = run_service.create_run(request.input, allow_retry=request.allow_retry)
-    record_run_created()
     event_bus.create(run.run_id)
     background_tasks.add_task(run_service.execute_run, run.run_id, allow_retry=request.allow_retry, event_bus=event_bus)
     return CreateRunResponse(run=run)
