@@ -15,28 +15,24 @@ ENV PYTHONUNBUFFERED=1 \
     SOURCE_STORE_PATH=/app/data/source_store.sqlite3 \
     COMPETEYE_VECTOR_STORE_PATH=/app/data/vector_store \
     COMPETEYE_CHECKPOINT_PATH=/app/data/graph_checkpoints.sqlite3 \
-    COMPETEYE_EMBEDDING_MODEL=BAAI/bge-base-zh-v1.5
+    COMPETEYE_EMBEDDING_MODEL=BAAI/bge-small-zh-v1.5 \
+    HF_ENDPOINT=https://hf-mirror.com
 
 WORKDIR /app
 
-# Use local apt mirror for faster builds. On Alibaba Cloud ECS the
-# *.sources file may already exist; we overwrite with the mirror.
-RUN rm -f /etc/apt/sources.list.d/*.sources \
-    && echo "deb http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware" > /etc/apt/sources.list \
-    && echo "deb http://deb.debian.org/debian/ trixie-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
-    && echo "deb http://deb.debian.org/debian-security/ trixie-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
-    && apt-get update \
+RUN apt-get update \
     && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install core Python dependencies.
-# fastembed (~50MB ONNX Runtime + ~33MB bge model) provides semantic embeddings
-# with no PyTorch/CUDA dependency.  The vector store falls back to a 512-dim
-# hash embedding when the model isn't available.
+# Core Python deps (this layer rarely changes — keep it cacheable)
 RUN pip install --no-cache-dir \
     fastapi httpx pydantic python-dotenv pyyaml litellm \
     langgraph langgraph-checkpoint-sqlite langfuse \
-    fastembed uvicorn chromadb mcp
+    uvicorn chromadb mcp
+
+# FastEmbed: ONNX-based embeddings (~50MB runtime + ~33MB model).
+# Separate layer so core deps stay cached when only fastembed changes.
+RUN pip install --no-cache-dir fastembed
 
 COPY . .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
