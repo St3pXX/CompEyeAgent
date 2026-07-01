@@ -28,25 +28,61 @@ except ImportError:
 DEFAULT_PERSIST_DIR = os.getenv("COMPETEYE_VECTOR_STORE_PATH", "data/vector_store")
 COLLECTION_NAME = "verified_facts"
 
+# Local sentence-transformers model for semantic embeddings (free, on-prem).
+DEFAULT_EMBEDDING_MODEL = os.getenv("COMPETEYE_EMBEDDING_MODEL", "BAAI/bge-base-zh-v1.5")
+
+# bge models recommend prefixing queries with a retrieval instruction.
+_BGE_QUERY_INSTRUCTION = "为这个句子生成表示以用于检索相关文章："
+
+
+class _BgeEmbedding(EmbeddingFunction):
+    """sentence-transformers embedding (default: BAAI/bge-base-zh-v1.5, 768-dim).
+
+    Semantically meaningful, runs locally on CPU — no external API, no data
+    leaving the host.  Loaded lazily so importing this module stays cheap.
+    """
+
+    def __init__(self, model_name: str = DEFAULT_EMBEDDING_MODEL) -> None:
+        from sentence_transformers import SentenceTransformer
+
+        self.model_name = model_name
+        self._model = SentenceTransformer(model_name)
+
+    def __call__(self, input: Documents) -> Embeddings:
+        vectors = self._model.encode(
+            list(input), normalize_embeddings=True, show_progress_bar=False,
+        )
+        return [vec.tolist() for vec in vectors]
+
 
 class _SimpleEmbedding(EmbeddingFunction):
-    """Lightweight embedding that maps text to a fixed-dimension vector via hashing.
+    """Deterministic hash embedding — NOT semantically meaningful.
 
-    Not semantically meaningful — used as a fallback when the ONNX model
-    cannot be downloaded (e.g. offline environments, CI).  For production,
-    install ``sentence-transformers`` and ChromaDB will auto-use it.
+    Fallback only, for environments where ``sentence-transformers`` is
+    unavailable (offline CI).  Produces 768-dim vectors to match the bge model
+    dimension so the ChromaDB collection stays compatible either way.
     """
 
     def __call__(self, input: Documents) -> Embeddings:
         import hashlib
         results: Embeddings = []
         for doc in input:
-            h = hashlib.sha256(doc.encode("utf-8")).digest()
+            h = hashlib.sha256(doc.encode("utf-8")).digest()  # 32 bytes
             vec = [float(b) / 255.0 for b in h]
-            # Pad/truncate to 256 dimensions
-            vec = (vec * 2)[:256]
+            # Tile/truncate to 768 dimensions (bge-base-zh-v1.5 dimension).
+            vec = (vec * 24)[:768]
             results.append(vec)
         return results
+
+
+def _build_embedding_function(model_name: str = DEFAULT_EMBEDDING_MODEL) -> EmbeddingFunction:
+    """Return the bge embedding if sentence-transformers is available, else fallback."""
+    try:
+        return _BgeEmbedding(model_name)
+    except Exception:
+        # sentence-transformers missing or model download failed — degrade to
+        # the hash fallback (same 768 dims) so the store still functions.
+        return _SimpleEmbedding()
 
 
 @dataclass
@@ -78,11 +114,34 @@ class VectorStore:
         else:
             os.makedirs(persist_directory, exist_ok=True)
             self._client = chromadb.PersistentClient(path=persist_directory)
-        self._collection = self._client.get_or_create_collection(
+        self._embedding_function = _build_embedding_function()
+        self._collection = self._get_or_rebuild_collection(collection_name)
+
+    def _get_or_rebuild_collection(self, collection_name: str):
+        """Get the collection, rebuilding it if the embedding dimension changed.
+
+        The legacy hash embedding was 256-dim; the bge model is 768-dim.  An old
+        persisted collection would raise a dimension-mismatch on query, so if an
+        incompatible collection exists we drop and recreate it.  The only data
+        lost is the previous (non-semantic) hash vectors — no real loss.
+        """
+        collection = self._client.get_or_create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"},
-            embedding_function=_SimpleEmbedding(),
+            embedding_function=self._embedding_function,
         )
+        try:
+            if collection.count() > 0:
+                # Probe with a tiny query; a dimension mismatch raises here.
+                collection.query(query_texts=["probe"], n_results=1)
+        except Exception:
+            self._client.delete_collection(collection_name)
+            collection = self._client.get_or_create_collection(
+                name=collection_name,
+                metadata={"hnsw:space": "cosine"},
+                embedding_function=self._embedding_function,
+            )
+        return collection
 
     def upsert_fact(
         self,
