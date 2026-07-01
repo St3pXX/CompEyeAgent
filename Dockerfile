@@ -19,12 +19,24 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
+# Use local apt mirror for faster builds. On Alibaba Cloud ECS the
+# *.sources file may already exist; we overwrite with the mirror.
+RUN rm -f /etc/apt/sources.list.d/*.sources \
+    && echo "deb http://deb.debian.org/debian/ trixie main contrib non-free non-free-firmware" > /etc/apt/sources.list \
+    && echo "deb http://deb.debian.org/debian/ trixie-updates main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
+    && echo "deb http://deb.debian.org/debian-security/ trixie-security main contrib non-free non-free-firmware" >> /etc/apt/sources.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends curl \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Install core Python dependencies.
+# sentence-transformers (~2GB with torch/CUDA) is NOT included — install it
+# separately on the host if semantic vector search is needed.  The vector store
+# falls back to a 768-dim hash embedding when the model isn't available.
+RUN pip install --no-cache-dir \
+    fastapi httpx pydantic python-dotenv pyyaml litellm \
+    langgraph langgraph-checkpoint-sqlite langfuse \
+    uvicorn chromadb mcp
 
 COPY . .
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
