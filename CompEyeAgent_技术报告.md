@@ -1,9 +1,25 @@
 # CompEyeAgent 技术架构报告 — 面试准备手册
 
 > **项目**：CompEyeAgent — AI 竞品分析 Agent 协作系统
-> **技术栈**：Python 3.11+ / CrewAI / FastAPI / React 19 / ChromaDB / OpenTelemetry / Prometheus
-> **规模**：后端 ~8000 行 + 前端 ~2000 行 · 145 个测试 · 4 个大版本 · 27 个子里程碑
+> **技术栈**：Python 3.11+ / LangGraph / FastAPI / React 19 / ChromaDB / Langfuse
+> **规模**：后端 ~8000 行 + 前端 ~2000 行 · 140 个测试 · 4 个大版本 · 27 个子里程碑
 > **最后更新**：2026 年 6 月
+
+---
+
+## ⚠️ 架构迁移说明（2026 年 6 月）
+
+**本文档编写于 CrewAI 架构时期，当前系统已迁移到 LangGraph StateGraph 编排。** 核心变更：
+
+- **编排引擎**：CrewAI Crew → LangGraph StateGraph（`graph/build.py`）
+- **节点实现**：CrewAI Agent/Task → 纯函数节点（`graph/nodes.py`：collect/analyze/write/verify）
+- **状态管理**：Task context 传递 → TypedDict AnalysisState + SQLite checkpointer
+- **可观测**：Prometheus + OTel → 自托管 Langfuse（litellm 原生回调）
+- **重写闭环**：runner.py 中的最小重写 → 状态图条件路由（verify 失败时自动回到 write）
+
+文档中的"CrewAI Agent"概念对应当前的"LangGraph 节点函数"，"Crew kickoff"对应"StateGraph.invoke()"，"Task context"对应"state 字典"。架构设计原则（独立质检、Scratchpad 共享、溯源校验）完全保留，仅执行引擎更换。
+
+**最新架构见 [README.md](README.md) 和 [docs/DESIGN.md](docs/DESIGN.md)。**
 
 ---
 
